@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f0c">
+<meta name="description" content="Sun Strike Trainer — одностраничный тренажёр ульты Инвокера. Только один файл, работает офлайн.">
+<title>SUN STRIKE — тренажёр ульты Инвокера</title>
+<style>
+/* ══════════════════════════════════════════════════════════
+   ПАЛИТРА В ДУХЕ DOTA: землисто-зелёно-коричневая земля,
+   неоновый оранжево-золотой Sun Strike, тёмный UI.
+   ══════════════════════════════════════════════════════════ */
+:root{
+  --bg:#0a0d0b;
+  --earth-0:#141a14;
+  --earth-1:#1d2519;
+  --earth-2:#2b2517;
+  --gold:#ffc247;
+  --gold-dim:#b8862c;
+  --orange:#ff7a1a;
+  --ember:#ff4d10;
+  --green:#7fc35a;
+  --toxic:#9ee06a;
+  --red:#e2503a;
+  --cyan:#63d7ff;
+  --text:#e9e3d1;
+  --text-dim:#9c9683;
+  --panel:rgba(12,16,13,.86);
+  --panel-line:rgba(255,194,71,.22);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{
+  margin:0; padding:0; height:100%; overflow:hidden;
+  background:var(--bg); color:var(--text); font-family:var(--font);
+  user-select:none; -webkit-user-select:none; touch-action:manipulation;
+}
+#game{
+  position:fixed; inset:0; width:100%; height:100%; display:block;
+  cursor:crosshair; touch-action:none;
+}
+.hidden{display:none !important}
+
+/* ─────────── HUD ─────────── */
+#hud{
+  position:fixed; left:0; right:0; top:0; z-index:20;
+  display:flex; align-items:center; gap:6px; flex-wrap:nowrap;
+  padding:6px 8px calc(6px + env(safe-area-inset-top)) 8px;
+  background:linear-gradient(to bottom, rgba(6,9,7,.92), rgba(6,9,7,.55) 70%, rgba(6,9,7,0));
+  font-variant-numeric:tabular-nums; pointer-events:none;
+}
+#hud .stat{
+  display:flex; flex-direction:column; align-items:flex-start; justify-content:center;
+  padding:3px 7px; border-radius:7px; background:rgba(29,37,25,.62);
+  border:1px solid var(--panel-line); min-width:0;
+}
+#hud .stat .k{font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-dim); white-space:nowrap}
+#hud .stat .v{font-size:15px; font-weight:700; line-height:1.15; white-space:nowrap}
+#hud .grow{flex:1 1 auto}
+#hud .timer .v{font-size:20px; color:var(--gold)}
+#hud .timer.low .v{color:var(--ember)}
+#hud .acc .v{color:var(--toxic)}
+#hud .streak .v{color:var(--orange)}
+#hud .streak .v.hot{text-shadow:0 0 10px rgba(255,122,26,.9)}
+#hud .buttons{display:flex; gap:5px; pointer-events:auto}
+#hud button{
+  font-family:var(--font); font-size:14px; line-height:1; width:32px; height:32px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(29,37,25,.75); color:var(--text); border:1px solid var(--panel-line);
+  border-radius:7px; cursor:pointer; padding:0;
+}
+#hud button:hover{background:rgba(60,52,30,.9); color:var(--gold)}
+#hud button:active{transform:scale(.94)}
+@media (max-width:760px){
+  #hud .stat{padding:2px 5px}
+  #hud .stat .k{font-size:8px}
+  #hud .stat .v{font-size:12px}
+  #hud .timer .v{font-size:16px}
+  #hud .opt{display:none}
+}
+@media (max-width:430px){
+  #hud .stat .k{font-size:7px}
+  #hud .stat .v{font-size:11px}
+  #hud .timer .v{font-size:14px}
+}
+
+/* ─────────── Экраны ─────────── */
+.screen{
+  position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+  padding:14px; overflow:auto;
+  background:radial-gradient(120% 90% at 50% 10%, rgba(20,26,20,.55), rgba(4,6,5,.93) 60%, rgba(2,3,2,.98));
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+}
+.card{
+  width:100%; max-width:660px; max-height:calc(100vh - 24px); overflow:auto;
+  background:var(--panel); border:1px solid var(--panel-line); border-radius:14px;
+  box-shadow:0 22px 60px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.05);
+  padding:16px 18px calc(16px + env(safe-area-inset-bottom)) 18px;
+}
+.title{
+  margin:0 0 2px 0; font-size:clamp(22px,5.4vw,34px); font-weight:800; letter-spacing:.06em;
+  color:var(--gold); text-transform:uppercase; line-height:1.05;
+  text-shadow:0 0 22px rgba(255,122,26,.45), 0 2px 0 rgba(0,0,0,.6);
+}
+.subtitle{margin:0 0 12px; font-size:12px; color:var(--text-dim); letter-spacing:.04em}
+h2.sec{
+  margin:14px 0 7px; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--gold-dim); border-bottom:1px solid rgba(255,194,71,.14); padding-bottom:4px;
+}
+.row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.diffs{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+@media (max-width:520px){ .diffs{grid-template-columns:repeat(2,1fr)} }
+.diff{
+  position:relative; text-align:left; padding:8px 9px; border-radius:9px; cursor:pointer;
+  background:linear-gradient(180deg, rgba(43,37,23,.6), rgba(20,26,20,.65));
+  border:1px solid rgba(255,255,255,.08); color:var(--text); font-family:var(--font);
+  transition:border-color .12s, transform .08s, box-shadow .12s;
+}
+.diff:hover{border-color:rgba(255,194,71,.5)}
+.diff:active{transform:scale(.98)}
+.diff.sel{border-color:var(--gold); box-shadow:0 0 0 1px rgba(255,194,71,.35), 0 0 20px rgba(255,122,26,.18) inset}
+.diff .dn{font-weight:700; font-size:13.5px; display:block}
+.diff .dd{font-size:9.5px; color:var(--text-dim); line-height:1.25; display:block; margin-top:2px}
+.diff .num{
+  position:absolute; top:5px; right:7px; font-size:9px; color:var(--gold-dim);
+  border:1px solid rgba(255,194,71,.3); border-radius:4px; padding:0 3px;
+}
+button.btn{
+  font-family:var(--font); font-size:13px; font-weight:600; letter-spacing:.04em;
+  padding:9px 14px; border-radius:9px; cursor:pointer; color:var(--text);
+  background:linear-gradient(180deg, rgba(58,50,30,.85), rgba(28,34,24,.9));
+  border:1px solid rgba(255,194,71,.3); transition:transform .08s, box-shadow .12s, border-color .12s;
+}
+button.btn:hover{border-color:var(--gold); box-shadow:0 0 18px rgba(255,122,26,.2)}
+button.btn:active{transform:scale(.97)}
+button.btn.primary{
+  background:linear-gradient(180deg, var(--gold), var(--orange)); color:#241503;
+  border-color:#ffd98a; font-weight:800; font-size:14.5px; letter-spacing:.08em;
+  text-shadow:0 1px 0 rgba(255,255,255,.25);
+}
+button.btn.primary:hover{box-shadow:0 0 26px rgba(255,150,30,.5)}
+button.btn.ghost{background:rgba(20,26,20,.6); border-color:rgba(255,255,255,.12)}
+.chip{
+  font-size:11px; padding:4px 9px; border-radius:999px; background:rgba(43,37,23,.7);
+  border:1px solid rgba(255,194,71,.2); color:var(--text-dim);
+}
+.chip b{color:var(--gold); font-weight:700}
+label.field{display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--text-dim); letter-spacing:.05em}
+input[type=range]{ -webkit-appearance:none; appearance:none; height:22px; background:transparent; width:100%; cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:6px; border-radius:4px; background:linear-gradient(90deg, var(--gold-dim), rgba(255,255,255,.12))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:18px; height:18px; margin-top:-6px; border-radius:50%; background:var(--gold); border:2px solid #2b1c05; box-shadow:0 0 10px rgba(255,180,60,.7)}
+input[type=range]::-moz-range-track{height:6px; border-radius:4px; background:rgba(255,255,255,.15)}
+input[type=range]::-moz-range-thumb{width:16px; height:16px; border:2px solid #2b1c05; border-radius:50%; background:var(--gold)}
+select{
+  font-family:var(--font); font-size:12.5px; padding:6px 8px; border-radius:8px; color:var(--text);
+  background:rgba(20,26,20,.85); border:1px solid rgba(255,194,71,.25); cursor:pointer;
+}
+.hintlist{font-size:11.5px; color:var(--text-dim); line-height:1.65; margin:0; padding-left:0; list-style:none}
+.hintlist b{color:var(--text)}
+kbd{
+  font-family:var(--font); font-size:10.5px; padding:1px 5px; border-radius:4px; color:var(--gold);
+  background:rgba(43,37,23,.9); border:1px solid rgba(255,194,71,.25); border-bottom-width:2px;
+}
+/* ─────────── Статы / гриды ─────────── */
+.grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+@media (max-width:560px){ .grid{grid-template-columns:repeat(2,1fr)} }
+.box{
+  background:linear-gradient(180deg, rgba(20,26,20,.75), rgba(14,18,15,.75));
+  border:1px solid rgba(255,255,255,.07); border-radius:9px; padding:7px 9px;
+}
+.box .k{font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-dim)}
+.box .v{font-size:19px; font-weight:800; color:var(--gold); line-height:1.25}
+.box .v small{font-size:11px; font-weight:600; color:var(--text-dim)}
+.box.good .v{color:var(--toxic)}
+.box.bad .v{color:var(--red)}
+.xpbar{height:7px; border-radius:5px; background:rgba(255,255,255,.09); overflow:hidden; border:1px solid rgba(255,255,255,.06)}
+.xpbar i{display:block; height:100%; width:0%; background:linear-gradient(90deg, var(--orange), var(--gold)); transition:width .4s ease}
+.cvwrap{margin-top:6px; background:rgba(8,11,9,.75); border:1px solid rgba(255,255,255,.07); border-radius:9px; padding:6px}
+.cvwrap canvas{display:block; width:100%; border-radius:6px}
+.legend{display:flex; gap:10px; flex-wrap:wrap; font-size:10px; color:var(--text-dim); margin-top:5px}
+.legend i{display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle}
+.verdict{font-size:12px; line-height:1.55; color:var(--text); margin:7px 0 0}
+.verdict b{color:var(--gold)}
+/* ─────────── Тост ─────────── */
+#toast{
+  position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  z-index:40; display:flex; flex-direction:column; gap:6px; align-items:center; pointer-events:none; width:max-content; max-width:92vw;
+}
+#toast .t{
+  font-size:12.5px; padding:7px 13px; border-radius:999px; color:var(--text);
+  background:rgba(12,16,13,.92); border:1px solid var(--panel-line);
+  box-shadow:0 8px 24px rgba(0,0,0,.6); animation:pop .25s ease; text-align:center;
+}
+#toast .t.gold{border-color:rgba(255,194,71,.6); color:var(--gold)}
+@keyframes pop{from{opacity:0; transform:translateY(8px) scale(.96)} to{opacity:1; transform:none}}
+.footer{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center}
+.tiny{font-size:10px; color:var(--text-dim); line-height:1.5}
+.warn{color:var(--ember)}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- ══════════════ HUD (во время раунда) ══════════════ -->
+<div id="hud" class="hidden">
+  <div class="stat timer" id="hTimer"><span class="k">время</span><span class="v">60.0</span></div>
+  <div class="stat"><span class="k">касты</span><span class="v" id="hCasts">0</span></div>
+  <div class="stat"><span class="k">хиты</span><span class="v" id="hHits">0</span></div>
+  <div class="stat acc"><span class="k">точность</span><span class="v" id="hAcc">0%</span></div>
+  <div class="stat streak"><span class="k">стрик</span><span class="v" id="hStreak">0</span></div>
+  <div class="stat opt"><span class="k">ср. промах</span><span class="v" id="hMiss">—</span></div>
+  <div class="stat opt"><span class="k">киллы</span><span class="v" id="hKills">0</span></div>
+  <div class="stat opt"><span class="k">очки</span><span class="v" id="hScore">0</span></div>
+  <div class="grow"></div>
+  <div class="buttons">
+    <button id="bPause" title="Пауза (Space)">⏸</button>
+    <button id="bMute" title="Звук (M)">🔊</button>
+  </div>
+</div>
+
+<!-- ══════════════ МЕНЮ ══════════════ -->
+<div id="menu" class="screen">
+  <div class="card">
+    <h1 class="title">Sun Strike</h1>
+    <p class="subtitle">Тренажёр ульты Инвокера · 1.7 с упреждения · всё в одном файле, офлайн</p>
+
+    <h2 class="sec">Сложность <span class="tiny">(клавиши 1–4)</span></h2>
+    <div class="diffs" id="diffBox"></div>
+    <p class="tiny" id="diffHint" style="margin-top:7px"></p>
+
+    <h2 class="sec">Параметры раунда</h2>
+    <div class="row">
+      <label class="field" style="flex:0 0 auto; min-width:150px">Длительность раунда
+        <select id="durSel"></select>
+      </label>
+      <label class="field" style="flex:1 1 240px">Задержка урона: <b id="delayVal" style="color:var(--gold)">1.70 с</b>
+        <input id="delayRange" type="range" min="1.0" max="2.5" step="0.05" value="1.7">
+        <span class="tiny">1.0 с — паблик с низким пингом · 2.5 с — много пинга / тренировка длинного упреждения</span>
+      </label>
+    </div>
+
+    <h2 class="sec">Прогресс</h2>
+    <div class="grid" id="menuStats"></div>
+    <div class="box" style="margin-top:7px">
+      <div class="k">Уровень <b id="lvlNum" style="color:var(--gold)">1</b> · XP</div>
+      <div class="xpbar" style="margin-top:5px"><i id="lvlBar"></i></div>
+      <div class="tiny" id="lvlTxt" style="margin-top:4px"></div>
+    </div>
+
+    <h2 class="sec">Хитмап промахов (вся история)</h2>
+    <div class="cvwrap"><canvas id="menuMap" style="height:190px"></canvas></div>
+    <div class="legend">
+      <span><i style="background:#e2503a"></i>промах</span>
+      <span><i style="background:#7fc35a"></i>попадание</span>
+      <span><i style="background:#ffc247"></i>центр = 0 ошибки</span>
+    </div>
+    <p class="verdict" id="menuVerdict">Пока нет данных — отыграй раунд.</p>
+
+    <h2 class="sec">Управление</h2>
+    <ul class="hintlist">
+      <li><kbd>ЛКМ</kbd> / <kbd>тап</kbd> — каст Sun Strike в точку под курсором</li>
+      <li><kbd>ПКМ</kbd> / <kbd>Space</kbd> — пауза &nbsp;·&nbsp; <kbd>R</kbd> — рестарт раунда &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>4</kbd> — сложность &nbsp;·&nbsp; <kbd>M</kbd> — звук</li>
+      <li>Маркер «кипит» ровно <b>задержку урона</b> — бей туда, где цель окажется <b>в момент удара</b>, а не туда, где она есть.</li>
+      <li>После каждого каста показывается разбор: <b>куда ты кликнул</b>, <b>где была цель</b> и вектор ошибки (<b>перелёт / отставание</b>).</li>
+    </ul>
+
+    <div class="footer">
+      <button class="btn primary" id="bStart">НАЧАТЬ РАУНД ▶</button>
+      <button class="btn ghost" id="bReset">Сбросить прогресс</button>
+      <span class="tiny" id="saveWarn"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ПАУЗА ══════════════ -->
+<div id="pause" class="screen hidden">
+  <div class="card" style="max-width:420px; text-align:center">
+    <h1 class="title" style="font-size:clamp(20px,5vw,28px)">Пауза</h1>
+    <p class="subtitle">Отдыхай. Цели тоже замерли.</p>
+    <div class="footer" style="justify-content:center">
+      <button class="btn primary" id="bResume">ПРОДОЛЖИТЬ</button>
+      <button class="btn ghost" id="bRestart2">РЕСТАРТ (R)</button>
+      <button class="btn ghost" id="bMenu2">В МЕНЮ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ИТОГИ РАУНДА ══════════════ -->
+<div id="results" class="screen hidden">
+  <div class="card">
+    <h1 class="title" id="rTitle" style="font-size:clamp(20px,5vw,30px)">Итоги раунда</h1>
+    <p class="subtitle" id="rSub"></p>
+
+    <h2 class="sec">Статистика</h2>
+    <div class="grid" id="rGrid"></div>
+
+    <h2 class="sec">Ошибка упреждения по ходу раунда</h2>
+    <div class="cvwrap"><canvas id="rGraph" style="height:150px"></canvas></div>
+    <div class="legend">
+      <span><i style="background:#7fc35a"></i>попадание (ошибка меньше радиуса)</span>
+      <span><i style="background:#e2503a"></i>промах</span>
+      <span><i style="background:#ffc247"></i>средняя ошибка за раунд</span>
+      <span><i style="background:#63d7ff"></i>радиус поражения</span>
+    </div>
+
+    <h2 class="sec">Хитмап смещений (за весь прогресс)</h2>
+    <div class="cvwrap"><canvas id="rMap" style="height:200px"></canvas></div>
+    <div class="legend">
+      <span><i style="background:#e2503a"></i>промах</span>
+      <span><i style="background:#7fc35a"></i>попадание</span>
+      <span>→ вправо = перелёт, ← влево = отставание, ↑↓ = боковая ошибка</span>
+    </div>
+    <p class="verdict" id="rVerdict"></p>
+
+    <h2 class="sec">Прогресс</h2>
+    <div class="box">
+      <div class="k">Уровень <b id="rLvl" style="color:var(--gold)">1</b> · +<b id="rXpGain" style="color:var(--gold)">0</b> XP за раунд</div>
+      <div class="xpbar" style="margin-top:5px"><i id="rLvlBar"></i></div>
+      <div class="tiny" id="rLvlTxt" style="margin-top:4px"></div>
+    </div>
+
+    <div class="footer">
+      <button class="btn primary" id="bAgain">ЕЩЁ РАЗ (R)</button>
+      <button class="btn ghost" id="bMenu3">В МЕНЮ</button>
+    </div>
+    <p class="tiny" id="rRecords" style="margin-top:8px"></p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════════
+   SUN STRIKE TRAINER — тренажёр ульты Инвокера.
+   Один файл: HTML + CSS + ванильный JS, canvas 2D, WebAudio, localStorage.
+   Никаких внешних запросов, библиотек и ассетов. Работает офлайн.
+   ══════════════════════════════════════════════════════════════════════════════ */
+(function(){
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  1. CONFIG — ВСЕ ПАРАМЕТРЫ БАЛАНСА ЗДЕСЬ. Крути и тюнь.
+//     Все длины — в «дизайн-px» (как если бы экран был 1280×720).
+//     На любом экране они умножаются на масштаб S (см. resize()).
+// ══════════════════════════════════════════════════════════════════════════════
+var CONFIG = {
+  // ──────── Раунд ────────
+  roundOptions: [30, 60, 120],   // варианты длительности раунда, сек
+  roundDefault: 60,              // длительность по умолчанию, сек
+  countdown: 2.2,                // отсчёт перед стартом раунда, сек (2.2 → готовься)
+  restartDelay: 0.85,            // пауза перед респавном убитого юнита, сек
+  postRound: 0.5,                // задержка перед показом итогов, сек
+
+  // ──────── Sun Strike ────────
+  strike: {
+    delayDefault: 1.7,           // ЗАДЕРЖКА УРОНА, сек. Главный параметр тренировки (как в доте)
+    delayMin: 1.0,               // минимум слайдера, сек
+    delayMax: 2.5,               // максимум слайдера, сек
+    radius: 92,                  // радиус зоны поражения в дизайн-px
+    hitboxMul: 1.08,             // множитель хитбокса (1.0 = ровно радиус; >1 добавляет прощения)
+    damage: 900,                 // урон: крипы и герои умирают с одного прямого попадания
+    castAnim: 0.30,              // длительность визуальной анимации каста, сек
+    castCooldown: 0.35,          // КД между кастами, сек (защита от спама и двойных тапов)
+    explodeTime: 0.55,           // сколько живёт столб света, сек
+    revealTime: 1.0,             // сколько висит разбор каста (метки + вектор ошибки), сек
+    fuseWobble: 0.085,           // амплитуда «кипения» маркера (доля радиуса)
+    fusePoints: 44,              // число точек в волнистой кромке маркера
+    maxActive: 6,                // максимум одновременных маркеров (защита от просадок FPS)
+    beamWidthMul: 1.35,          // ширина столба света у земли (в радиусах зоны)
+    beamTopMul: 2.2,             // ширина столба у верхней кромки (свет расширяется кверху)
+    beamDarken: 0.5              // насколько столб затемняет остальной экран (0 = не затемнять)
+  },
+
+  // ──────── Юниты ────────
+  unit: {
+    creepHp: 320,                // HP крипа
+    heroHp: 640,                 // HP героя
+    creepR: 13,                  // радиус тела крипа, дизайн-px
+    heroR: 17,                   // радиус тела героя, дизайн-px
+    speedJitter: 0.10,           // разброс скорости юнита (±10%), чтобы цели не были клонами
+    accel: 6.0,                  // плавность разгона/торможения (больше = резче)
+    jukeSpeedMul: 1.0,           // множитель скорости во время juke-рывка в бок
+    jukeTime: [0.30, 0.62],      // длительность бокового ухода, сек
+    pauseTime: [0.5, 1.0],       // сколько герой стоит на месте, сек
+    dashTime: [0.45, 0.8],       // длительность рывка, сек
+    dashMul: 1.75,               // множитель скорости в рывке
+    blinkCd: [2.4, 4.6],         // перезарядка блинка, сек
+    stutterOn: [0.10, 0.20],     // микро-шаг при stutter-step, сек
+    stutterOff: [0.06, 0.14],    // микро-пауза при stutter-step, сек
+    respawnJitter: [0.0, 3.2]    // разброс задержки респавна, сек
+  },
+
+  // ──────── Дорожки (waypoint-ломаные) ────────
+  lanes: {
+    count: 3,                    // число дорожек (2–3 по ТЗ)
+    yFrac: [0.20, 0.50, 0.80],   // где проходят дорожки внутри игрового поля
+    xFrac: [0.04, 0.36, 0.66, 0.96], // узлы по X внутри поля
+    wiggle: 26,                  // разброс Y узлов, дизайн-px
+    roadWidth: 26,               // ширина протоптанной дорожки на земле, дизайн-px
+    minGap: 90                   // минимальная дистанция между целями на одной дорожке, дизайн-px
+  },
+
+  // ──────── Игровое поле ────────
+  field: {
+    padX: 6,                     // отступ поля от краёв экрана, дизайн-px
+    topOffset: 46,               // отступ сверху под HUD, дизайн-px
+    bottomOffset: 10,            // отступ снизу, дизайн-px
+    maxAspect: 1.9,              // в портрете поле не растягивается выше (высота ≤ ширина×это)
+    border: true                 // рисовать рамку тренировочного полигона
+  },
+
+  // ──────── Аналитика / счёт ────────
+  score: {
+    base: 120,                   // очки за чистое попадание
+    speedBonus: 130,             // максимум бонуса за скорость цели
+    speedRef: 150,               // скорость, при которой бонус максимален, дизайн-px/сек
+    centreBonus: 60,             // бонус за попадание точно в центр (ошибка < 20% радиуса)
+    multStep: 3,                 // каждые N попаданий подряд множитель растёт
+    multStepVal: 0.5,            // прибавка к множителю за шаг
+    multMax: 3.0,                // максимум множителя
+    xpPerKill: 12,               // XP за килл
+    xpPerHit: 8,                 // дополнительный XP за чистый хит (без промаха)
+    xpPerRound: 20,              // XP за завершённый раунд
+    levelBase: 140,              // XP на 2-й уровень
+    levelPow: 1.32               // степень кривой уровней
+  },
+
+  // ──────── Подсказка упреждения (тренажёрная «линейка») ────────
+  guide: {
+    on: true,                    // рисовать линию курса цели и подсказку упреждения
+    leadLine: 80,                // длина пунктира «где цель будет через задержку», дизайн-px
+    pickRadius: 150,             // в каком радиусе от курсора искать цель для подсказки, дизайн-px
+    showMs: true                 // показывать остаток запала в мс у маркера
+  },
+
+  // ──────── Визуал / ФПС ────────
+  fx: {
+    dprMax: (/Mobi|Android|iPhone|iPad/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '')
+             ? 1.5 : 2),            // ограничение devicePixelRatio: на телефонах ниже ради FPS
+    maxParticles: 260,           // жёсткий лимит частиц
+    maxRings: 26,                // лимит ударных волн (каждая — дорогая эллипс-обводка)
+    shakeMul: 1.0,               // множитель тряски экрана
+    shakeDecay: 7.5,             // затухание тряски, 1/сек
+    flashDecay: 4.2,             // затухание вспышки, 1/сек
+    trailLen: 9,                 // длина следa юнита (точек)
+    reviewGhost: true,           // показывать, где цель была в момент каста
+    unitLabels: true             // подписывать цели (КРИП / ГЕРОЙ / БЛИНК и т.п.)
+  },
+
+  // ──────── Хитмап ────────
+  heatmap: {
+    storeMax: 1400,              // сколько последних выстрелов хранить в localStorage
+    scalePx: 230                 // ошибка, которая раскладывается в край графики, дизайн-px
+  }
+};
+
+// ──────── Сложности ────────
+// speed — базовая скорость цели в дизайн-px/сек, chance — вероятности поведений за событие.
+var DIFFICULTIES = {
+  1: { id:1, name:'Разминка', tag:'WARMUP', color:'#7fc35a',
+       desc:'Только крипы. Прямые траектории, медленно. Прочувствуй свои 1.7 с.',
+       count:2, heroes:0, speed:60, juke:0, jukeEvery:[9,9], pauseChance:0, dash:0, blink:false,
+       blinkEvery:[9,9], stutter:false, radiusMul:1.18, fog:0, cooldownMul:1.0 },
+  2: { id:2, name:'Норма', tag:'NORMAL', color:'#ffc247',
+       desc:'2 героя + крип. Джуки, остановки, средняя скорость.',
+       count:3, heroes:0.67, speed:96, juke:0.42, jukeEvery:[1.6,3.0], pauseChance:0.22, dash:0.16,
+       blink:false, blinkEvery:[9,9], stutter:false, radiusMul:1.0, fog:0, cooldownMul:1.0 },
+  3: { id:3, name:'Хард', tag:'HARD', color:'#ff7a1a',
+       desc:'Быстрые герои, резкие смены курса, края карты в тумане войны.',
+       count:3, heroes:1.0, speed:130, juke:0.58, jukeEvery:[1.0,2.1], pauseChance:0.28, dash:0.34,
+       blink:false, blinkEvery:[9,9], stutter:false, radiusMul:0.92, fog:0.62, cooldownMul:1.0 },
+  4: { id:4, name:'Insane', tag:'INSANE', color:'#e2503a',
+       desc:'Три цели: stutter-step, блинки на ~300 px, постоянные джуки. Боль и страдания.',
+       count:3, heroes:1.0, speed:172, juke:0.6, jukeEvery:[0.7,1.5], pauseChance:0.22, dash:0.4,
+       blink:true, blinkEvery:[2.2,4.2], blinkDist:300, stutter:true, radiusMul:0.86, fog:0.55, cooldownMul:1.0 }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  2. Утилиты
+// ══════════════════════════════════════════════════════════════════════════════
+var TAU = Math.PI * 2;
+function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function rand(a,b){ return a + Math.random()*(b-a); }
+function randInt(a,b){ return (a + Math.random()*(b-a+1))|0; }
+function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
+function chance(p){ return Math.random() < p; }
+function len(x,y){ return Math.sqrt(x*x + y*y); }
+function sign(x){ return x < 0 ? -1 : 1; }
+function fmt1(v){ return (Math.round(v*10)/10).toFixed(1); }
+function fmt2(v){ return (Math.round(v*100)/100).toFixed(2); }
+function fmtPct(v){ return Math.round(v*100) + '%'; }
+function easeOut(t){ return 1 - (1-t)*(1-t); }
+function easeIn(t){ return t*t; }
+
+var $ = function(id){ return document.getElementById(id); };
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  3. Сейв прогресса (localStorage, с защитой от приватного режима)
+// ══════════════════════════════════════════════════════════════════════════════
+var Save = (function(){
+  var KEY = 'sunstrike_trainer_v1';
+  var ok = true;
+  var data = {
+    xp:0, level:1,
+    kills:0, casts:0, hits:0, rounds:0,
+    bestAcc:0, bestScore:0, bestStreak:0,
+    shots:[],                                  // {a: along, p: perp, h: 0/1} — для хитмапа
+    set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false }
+  };
+  function load(){
+    try{
+      var raw = window.localStorage.getItem(KEY);
+      if(raw){
+        var o = JSON.parse(raw);
+        if(o && typeof o === 'object'){
+          for(var k in data) if(Object.prototype.hasOwnProperty.call(o,k)) data[k] = o[k];
+          data.shots = Array.isArray(data.shots) ? data.shots : [];
+          data.set = data.set || {};
+        }
+      }
+    }catch(e){ ok = false; }
+    // валидация настроек
+    data.set.diff = DIFFICULTIES[data.set.diff] ? data.set.diff : 2;
+    data.set.dur = CONFIG.roundOptions.indexOf(data.set.dur) >= 0 ? data.set.dur : CONFIG.roundDefault;
+    data.set.delay = clamp(Number(data.set.delay) || CONFIG.strike.delayDefault, CONFIG.strike.delayMin, CONFIG.strike.delayMax);
+    data.level = Math.max(1, data.level|0);
+    return data;
+  }
+  function save(){
+    if(!ok) return;
+    try{ window.localStorage.setItem(KEY, JSON.stringify(data)); }
+    catch(e){ ok = false; }
+  }
+  function xpForLevel(l){ return Math.round(CONFIG.score.levelBase * Math.pow(l, CONFIG.score.levelPow)); }
+  function addXp(n){
+    data.xp += n;
+    var ups = 0;
+    while(data.xp >= xpForLevel(data.level)){ data.xp -= xpForLevel(data.level); data.level++; ups++; }
+    return ups;
+  }
+  function addShot(along, perp, hit){
+    data.shots.push({ a:Math.round(along), p:Math.round(perp), h:hit?1:0 });
+    if(data.shots.length > CONFIG.heatmap.storeMax) data.shots.splice(0, data.shots.length - CONFIG.heatmap.storeMax);
+  }
+  var lastSave = 0;
+  function saveThrottled(ms){
+    var t = Date.now();
+    if(t - lastSave < (ms || 2000)) return;
+    lastSave = t;
+    save();
+  }
+  function reset(){
+    var s = data.set;
+    data = { xp:0, level:1, kills:0, casts:0, hits:0, rounds:0, bestAcc:0, bestScore:0, bestStreak:0,
+             shots:[], set:s };
+    save();
+  }
+  return { data:data, load:load, save:save, saveThrottled:saveThrottled, addXp:addXp, addShot:addShot,
+           reset:reset, xpForLevel:xpForLevel, isOk:function(){ return ok; } };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  4. Звук: всё синтезируется WebAudio, ни одного файла
+// ══════════════════════════════════════════════════════════════════════════════
+var SFX = (function(){
+  var ctx = null, master = null, enabled = true, noiseBuf = null;
+  function init(){
+    if(ctx) return ctx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    try{
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.7;
+      master.connect(ctx.destination);
+      // общий буфер белого шума для «вшух»/взрывов
+      var n = ctx.sampleRate * 1.0, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+      for(var i=0;i<n;i++) d[i] = Math.random()*2 - 1;
+      noiseBuf = b;
+    }catch(e){ ctx = null; }
+    return ctx;
+  }
+  function resume(){ if(ctx && ctx.state === 'suspended') ctx.resume(); }
+  function now(){ return ctx.currentTime; }
+  function env(node, t, a, d, peak){
+    var g = node.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(0.0001, t);
+    g.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a);
+    g.exponentialRampToValueAtTime(0.0001, t + a + d);
+  }
+  // Тон с частотным свипом
+  function tone(o){
+    if(!enabled || !init() || !ctx) return;
+    var t = now() + (o.at || 0);
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(o.f0, t);
+    if(o.f1 && o.f1 !== o.f0) osc.frequency.exponentialRampToValueAtTime(Math.max(1,o.f1), t + (o.sweep || o.dur));
+    env(g, t, o.a || 0.005, o.dur, o.vol == null ? 0.25 : o.vol);
+    osc.connect(g); g.connect(master);
+    osc.start(t); osc.stop(t + (o.a||0.005) + o.dur + 0.05);
+  }
+  // Шумовой всплеск с фильтром
+  function noise(o){
+    if(!enabled || !init() || !ctx) return;
+    var t = now() + (o.at || 0);
+    var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+    src.loop = true;
+    var flt = ctx.createBiquadFilter();
+    flt.type = o.filter || 'bandpass';
+    flt.frequency.setValueAtTime(o.f0, t);
+    if(o.f1) flt.frequency.exponentialRampToValueAtTime(Math.max(30,o.f1), t + o.dur);
+    flt.Q.value = o.q == null ? 1.1 : o.q;
+    var g = ctx.createGain();
+    env(g, t, o.a || 0.01, o.dur, o.vol == null ? 0.2 : o.vol);
+    src.connect(flt); flt.connect(g); g.connect(master);
+    src.start(t); src.stop(t + (o.a||0.01) + o.dur + 0.08);
+  }
+  return {
+    unlock:function(){ init(); resume(); },
+    setEnabled:function(v){ enabled = v; if(master) master.gain.value = v ? 0.7 : 0.0; },
+    isEnabled:function(){ return enabled; },
+    // каст: короткий свист + восходящий блип
+    cast:function(){
+      noise({f0:420, f1:2600, dur:0.22, vol:0.16, q:1.4, filter:'bandpass'});
+      tone({f0:320, f1:900, type:'triangle', dur:0.16, vol:0.1});
+    },
+    // удар ульты: могучий бум + столб
+    impact:function(){
+      tone({f0:170, f1:42, type:'sine', dur:0.5, a:0.004, vol:0.42});
+      tone({f0:360, f1:80, type:'sawtooth', dur:0.28, a:0.003, vol:0.12});
+      noise({f0:1800, f1:220, dur:0.42, vol:0.3, filter:'lowpass', q:0.8});
+      noise({f0:6000, f1:2500, dur:0.16, vol:0.12});
+    },
+    // попадание: звонкий пинг + искры
+    hit:function(mult){
+      var m = mult || 1;
+      tone({f0:880*m, f1:1320*m, type:'triangle', dur:0.2, vol:0.26});
+      tone({f0:1760*m, f1:2640*m, type:'sine', dur:0.12, vol:0.12, at:0.02});
+      noise({f0:5200, f1:3000, dur:0.12, vol:0.09, filter:'highpass'});
+    },
+    // мисс: глухое «вшух»
+    miss:function(){
+      noise({f0:900, f1:150, dur:0.26, vol:0.22, filter:'lowpass', q:0.7, a:0.008});
+      tone({f0:220, f1:110, type:'sine', dur:0.2, vol:0.08});
+    },
+    // стрик: короткое арпеджио, высота растёт со стриком
+    streak:function(n){
+      var step = Math.min(6, Math.floor((n||1) / CONFIG.score.multStep));
+      var base = 523.25 * Math.pow(1.0595, step*1.5);
+      [0,4,7].forEach(function(semi, i){
+        tone({f0:base*Math.pow(2, semi/12), type:'triangle', dur:0.16, vol:0.19, at:i*0.055});
+      });
+      noise({f0:7000, f1:4000, dur:0.3, vol:0.05, filter:'highpass'});
+    },
+    levelUp:function(){
+      [0,5,9,12].forEach(function(s,i){ tone({f0:392*Math.pow(2,s/12), type:'triangle', dur:0.22, vol:0.2, at:i*0.09}); });
+    },
+    ui:function(){ tone({f0:620, f1:880, type:'square', dur:0.05, vol:0.05}); },
+    countdown:function(hi){ tone({f0: hi?900:520, type:'triangle', dur:0.12, vol:0.14}); },
+    // блинк цели: короткий восходящий «вжик» — сигнал, что цель телепортнулась
+    blink:function(){
+      tone({f0:520, f1:1500, type:'sine', dur:0.12, vol:0.13, a:0.004});
+      noise({f0:2600, f1:900, dur:0.1, vol:0.06, filter:'bandpass', q:1.6});
+    },
+    roundEnd:function(){ [0,-3,-7].forEach(function(s,i){ tone({f0:523*Math.pow(2,s/12), type:'triangle', dur:0.3, vol:0.18, at:i*0.13}); }); }
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  5. Мир: размеры, масштаб, дорожки, точки на ломаных
+// ══════════════════════════════════════════════════════════════════════════════
+var canvas = $('game');
+var ctx = canvas.getContext('2d');
+
+var W = 1280, H = 720;        // размер поля в CSS-px (мировые координаты)
+var S = 1;                    // масштаб дизайн-px → мировые px (для маленьких экранов)
+var dpr = 1;                  // плотность пикселей рендера
+
+var Field = { x:0, y:0, w:0, h:0 };   // прямоугольник игрового поля
+var Lanes = [];                       // массив дорожек (ломаных)
+
+function computeScale(){
+  // S подбирается так, чтобы на телефоне всё было пропорционально меньше,
+  // а на десктопе — примерно 1:1 к дизайн-размеру 1280×720.
+  var base = Math.sqrt(1280*720);
+  S = clamp(Math.sqrt(W*H) / base, 0.46, 1.45);
+}
+
+function rebuildField(){
+  var padTop = (CONFIG.field.topOffset) * S;
+  var padBottom = (CONFIG.field.bottomOffset) * S;
+  var padX = CONFIG.field.padX * S;
+  var availH = H - padTop - padBottom;
+  var fh = availH;
+  // В портрете не растягиваем поле в длинную «колбасу» — держим разумный аспект
+  var maxH = (W - padX*2) * CONFIG.field.maxAspect;
+  if(fh > maxH){ fh = maxH; }
+  Field.x = padX;
+  Field.y = padTop + (availH - fh) / 2;
+  Field.w = W - padX*2;
+  Field.h = fh;
+}
+
+function rebuildLanes(){
+  Lanes = [];
+  var L = CONFIG.lanes;
+  for(var i=0;i<L.count;i++){
+    var baseY = Field.y + Field.h * L.yFrac[i % L.yFrac.length];
+    var pts = [];
+    for(var k=0;k<L.xFrac.length;k++){
+      var x = Field.x + Field.w * L.xFrac[k];
+      var y = baseY + (k === 0 || k === L.xFrac.length-1 ? 0 : rand(-L.wiggle, L.wiggle) * S);
+      pts.push({x:x, y:clamp(y, Field.y + 8*S, Field.y + Field.h - 8*S)});
+    }
+    // метрика ломаной: длины сегментов и общая длина
+    var segs = [], total = 0;
+    for(var j=0;j<pts.length-1;j++){
+      var dx = pts[j+1].x - pts[j].x, dy = pts[j+1].y - pts[j].y;
+      var l = Math.max(1, len(dx,dy));
+      segs.push({ l:l, ux:dx/l, uy:dy/l });
+      total += l;
+    }
+    Lanes.push({ y:baseY, pts:pts, segs:segs, len:total });
+  }
+}
+
+// Точка, касательная и нормаль на ломаной по «пройденной дистанции»
+function pathAt(lane, dist){
+  var d = clamp(dist, 0, lane.len), acc = 0;
+  for(var i=0;i<lane.segs.length;i++){
+    var s = lane.segs[i], p0 = lane.pts[i];
+    if(d <= acc + s.l || i === lane.segs.length - 1){
+      var local = d - acc;
+      return { x:p0.x + s.ux*local, y:p0.y + s.uy*local,
+               tx:s.ux, ty:s.uy, nx:-s.uy, ny:s.ux };
+    }
+    acc += s.l;
+  }
+  var last = lane.segs[lane.segs.length-1], lp = lane.pts[lane.pts.length-2];
+  return { x:lp.x + last.ux*last.l, y:lp.y + last.uy*last.l, tx:last.ux, ty:last.uy, nx:-last.uy, ny:last.ux };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  6. Юнит: цель, по которой мы учимся попадать
+// ══════════════════════════════════════════════════════════════════════════════
+var unitIdSeq = 1;
+
+function Unit(type, diff, laneIdx, atEnd){
+  var U = CONFIG.unit;
+  this.id = unitIdSeq++;
+  this.type = type;                               // 'creep' | 'hero'
+  this.isHero = type === 'hero';
+  this.laneIdx = laneIdx;
+  this.lane = Lanes[laneIdx];
+  this.r = (this.isHero ? U.heroR : U.creepR) * S;
+  this.hp = this.isHero ? U.heroHp : U.creepHp;
+  this.hpMax = this.hp;
+  // стартовая позиция: с краю дорожки
+  var fromEnd = atEnd === undefined ? chance(0.5) : atEnd;
+  this.dir = fromEnd ? -1 : 1;
+  this.dist = fromEnd ? this.lane.len - rand(0, 60*S) : rand(0, 60*S);
+  this.baseSpeed = diff.speed * rand(1 - U.speedJitter, 1 + U.speedJitter) * S;
+  this.speed = 0;                                 // текущая (сглаженная) скорость вдоль ломаной
+  this.wantSpeed = this.baseSpeed;                // желаемая скорость
+  this.offset = rand(-10,10) * S;                 // боковое смещение от дорожки
+  this.offsetVel = 0;
+  this.stun = 0;                                  // герой «стоит» — секунды
+  this.dash = 0;                                  // остаток рывка
+  this.juke = rand(-1,1);                         // боковой множитель скорости
+  this.jukeT = 0;                                 // остаток бокового ухода
+  this.gate = 0;                                  // stutter-step: таймер текущей фазы
+  this.gateMoving = true;
+  this.blinkIn = rand(0.8, 2.5);                  // когда следующий блинк
+  this.nextEvent = rand(diff.jukeEvery[0] * 0.4, diff.jukeEvery[1]);
+  this.diff = diff;
+  this.dead = false;
+  this.spawnT = 0;                                // анимация появления
+  this.hitFlash = 0;
+  this.vel = {x:0, y:0};                          // мировая скорость (для аналитики)
+  this.pos = {x:0, y:0};
+  this.refDir = {x:1,y:0};                        // «намеренное» направление движения (по дорожке)
+  this.trail = [];
+  this.trailT = 0;
+  this.blinkFx = rand(0, 1);
+  pathAt(this.lane, this.dist);
+}
+
+Unit.prototype.update = function(dt, time){
+  var U = CONFIG.unit, D = this.diff;
+  this.spawnT = Math.min(1, this.spawnT + dt * 3);
+  this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
+  this.blinkFx = Math.max(0, this.blinkFx - dt * 2.2);
+
+  // ── stutter-step (Insane): цель дёргается микро-шагами ──
+  if(D.stutter){
+    this.gate -= dt;
+    if(this.gate <= 0){
+      this.gateMoving = !this.gateMoving;
+      this.gate = this.gateMoving ? rand(U.stutterOn[0], U.stutterOn[1]) : rand(U.stutterOff[0], U.stutterOff[1]);
+    }
+  } else {
+    this.gateMoving = true;
+  }
+
+  // ── расписание поведений (джук / стойка / рывок / блинк) ──
+  this.nextEvent -= dt;
+  if(this.nextEvent <= 0){
+    this.nextEvent = rand(D.jukeEvery[0], D.jukeEvery[1]);
+    this.behave(time);
+  }
+
+  // таймеры поведений
+  if(this.stun > 0) this.stun -= dt;
+  if(this.dash > 0) this.dash -= dt;
+  if(this.jukeT > 0) this.jukeT -= dt;
+
+  // ── блинк (Insane) ──
+  if(D.blink){
+    this.blinkIn -= dt;
+    if(this.blinkIn <= 0){
+      this.blinkIn = rand(U.blinkCd[0], U.blinkCd[1]);
+      var dist = (D.blinkDist || 300) * S;
+      var nd = clamp(this.dist + this.dir * dist, 0, this.lane.len);
+      if(nd !== this.dist){
+        // визуальный след телепорта
+        FX.blink(this.pos.x, this.pos.y);
+        this.dist = nd;
+        this.offset += rand(-24,24) * S;
+        pathAtOut(this);
+        FX.blink(this.pos.x, this.pos.y);
+        this.blinkFx = 1;
+        SFX.blink();  // сигнал: цель телепортнулась
+      }
+    }
+  }
+
+  // ── расчёт желаемой скорости ──
+  var want = this.baseSpeed;
+  if(this.stun > 0) want = 0;
+  else if(this.dash > 0) want = this.baseSpeed * U.dashMul;
+  else if(!this.gateMoving) want = 0;
+  this.wantSpeed = want;
+  // плавный разгон/торможение
+  this.speed += (want - this.speed) * clamp(dt * U.accel, 0, 1);
+
+  // ── движение вдоль ломаной (ping-pong) ──
+  var prevX = this.pos.x, prevY = this.pos.y;
+  this.dist += this.speed * this.dir * dt;
+  if(this.dist >= this.lane.len){ this.dist = this.lane.len; this.dir = -1; }
+  else if(this.dist <= 0){ this.dist = 0; this.dir = 1; }
+
+  // ── пружина бокового смещения (джук возвращается обратно) ──
+  var k = 7.5, c = 3.2;
+  this.offsetVel += (-this.offset * k - this.offsetVel * c) * dt;
+  this.offset += this.offsetVel * dt;
+  // не даём улететь за пределы поля
+  var maxOff = Math.max(14*S, Field.h * 0.12);
+  if(Math.abs(this.offset) > maxOff){ this.offset = sign(this.offset) * maxOff; this.offsetVel *= -0.25; }
+
+  // ── мировая позиция ──
+  pathAtOut(this);
+
+  this.vel.x = dt > 0 ? (this.pos.x - prevX)/dt : 0;
+  this.vel.y = dt > 0 ? (this.pos.y - prevY)/dt : 0;
+
+  // ── след движения (помогает читать направление и скорость) ──
+  this.trailT -= dt;
+  if(this.trailT <= 0 && this.speed > 6*S){
+    this.trailT = 0.045;
+    this.trail.push({x:this.pos.x, y:this.pos.y, t:1});
+    if(this.trail.length > CONFIG.fx.trailLen) this.trail.shift();
+  }
+  for(var i=0;i<this.trail.length;i++) this.trail[i].t -= dt * 2.2;
+  while(this.trail.length && this.trail[0].t <= 0) this.trail.shift();
+};
+
+// пересчёт мировой позиции по параметру дистанции
+function pathAtOut(u){
+  var p = pathAt(u.lane, u.dist);
+  u.refDir.x = p.tx * u.dir;
+  u.refDir.y = p.ty * u.dir;
+  u.pos.x = p.x + p.nx * u.offset;
+  u.pos.y = p.y + p.ny * u.offset;
+}
+
+// Выбор поведения. Чем выше сложность — тем чаще подлости.
+Unit.prototype.behave = function(time){
+  var D = this.diff, U = CONFIG.unit;
+  var roll = Math.random(), pa = D.pauseChance || 0, da = D.dash || 0, ja = D.juke || 0;
+  if(this.stun > 0 || this.speed < this.baseSpeed * 0.35) return;   // уже стоит — не дёргаем
+  if(this.isHero && roll < pa){
+    // остановка на месте — обманка: привыкли упреждать, а цель встала
+    this.stun = rand(U.pauseTime[0], U.pauseTime[1]);
+  } else if(this.isHero && roll < pa + da){
+    this.dash = rand(U.dashTime[0], U.dashTime[1]);
+  } else if(this.isHero && roll < pa + da + ja){
+    if(chance(0.72)){
+      // боковой джук: резкая смена направления вбок
+      this.offsetVel += sign(Math.random()-0.5) * rand(150, 265) * S;
+      this.jukeT = rand(U.jukeTime[0], U.jukeTime[1]);
+      this.stun = Math.max(this.stun, this.jukeT);
+    } else {
+      // разворот на 180°: цель резко бежит назад
+      this.dir = -this.dir;
+      this.nextEvent = rand(0.35, 0.9);
+    }
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  7. Эффекты: частицы, волны, всплывающие числа, тряска, вспышки
+// ══════════════════════════════════════════════════════════════════════════════
+var FX = (function(){
+  var parts = [], rings = [], floats = [], booms = [], shakes = { x:0, y:0, mag:0 }, flash = 0, flashColor = '255,240,200';
+  function addPart(x,y,vx,vy,life,size,color,kind){
+    if(parts.length >= CONFIG.fx.maxParticles) return;
+    parts.push({x:x,y:y,vx:vx,vy:vy,life:life,max:life,size:size,color:color,kind:kind||'dot',rot:rand(0,TAU)});
+  }
+  function addRing(x,y,r0,r1,life,color,width){
+    if(rings.length >= CONFIG.fx.maxRings) return;
+    rings.push({x:x,y:y,r0:r0,r1:r1,t:0,life:life,color:color,width:width||2});
+  }
+  function addFloat(x,y,text,color,size,bold){
+    if(floats.length > 26) floats.shift();
+    floats.push({x:x,y:y,text:text,color:color,size:size||14,t:0,life:1.15,vy:-34*S,bold:bold!==false});
+  }
+  function shake(mag){ shakes.mag = Math.min(30*S, shakes.mag + mag * CONFIG.fx.shakeMul); }
+  function doFlash(a, color){ flash = Math.max(flash, a); if(color) flashColor = color; }
+
+  // взрыв Sun Strike: столб света + искры + пыль
+  function sunstrike(x,y,radius){
+    booms.push({x:x,y:y,t:0,life:CONFIG.strike.explodeTime, r:radius});
+    addRing(x, y, radius*0.25, radius*2.6, 0.42, '255,214,130', 3.2);
+    addRing(x, y, radius*0.1, radius*1.7, 0.28, '255,255,235', 2.0);
+    var n = 26;
+    for(var i=0;i<n;i++){
+      var a = rand(0,TAU), sp = rand(70, 330) * S;
+      addPart(x, y, Math.cos(a)*sp, Math.sin(a)*sp*0.7 - rand(40,220)*S, rand(0.35,0.85),
+              rand(1.4,3.6)*S, i%4===0 ? '255,255,220' : (i%3===0 ? '255,170,60' : '255,110,20'), 'spark');
+    }
+    for(var j=0;j<14;j++){
+      addPart(x + rand(-radius,radius), y + rand(-radius*0.5,radius*0.5), rand(-40,40)*S, rand(-190,-70)*S,
+              rand(0.5,1.1), rand(2.5,6)*S, '150,120,70', 'smoke');
+    }
+    shake(5.5*S);
+    doFlash(0.34, '255,226,170');
+  }
+  // телепорт-блинк
+  function blink(x,y){
+    addRing(x, y, 4*S, 30*S, 0.3, '120,215,255', 2);
+    for(var i=0;i<9;i++){
+      var a = rand(0,TAU);
+      addPart(x, y, Math.cos(a)*rand(30,110)*S, Math.sin(a)*rand(30,110)*S, rand(0.2,0.45), rand(1.4,2.6)*S, '110,200,255','spark');
+    }
+  }
+  // попадание: золотые искры + «+N»
+  function kill(x,y,radius){
+    addRing(x, y, radius*0.2, radius*1.5, 0.34, '140,235,120', 2.4);
+    for(var i=0;i<18;i++){
+      var a = rand(0,TAU), sp = rand(50,240)*S;
+      addPart(x, y, Math.cos(a)*sp, Math.sin(a)*sp - rand(20,120)*S, rand(0.3,0.7), rand(1.5,3.4)*S,
+              i%2 ? '255,220,120' : '160,240,120','spark');
+    }
+  }
+  // промах: пыль и серый «вшух»
+  function miss(x,y,radius){
+    addRing(x, y, radius*0.9, radius*1.25, 0.3, '150,150,140', 1.4);
+    for(var i=0;i<10;i++){
+      var a = rand(0,TAU);
+      addPart(x, y, Math.cos(a)*rand(20,90)*S, Math.sin(a)*rand(20,70)*S - 20*S, rand(0.3,0.6), rand(1.6,3.2)*S, '130,125,105','dot');
+    }
+  }
+  // искры «кипящего» маркера
+  function fuse(x,y,radius){
+    var a = rand(0,TAU);
+    addPart(x + Math.cos(a)*radius, y + Math.sin(a)*radius*0.5,
+            rand(-16,16)*S, rand(-70,-26)*S, rand(0.35,0.7), rand(1.2,2.4)*S, '255,190,80','ember');
+  }
+
+  function update(dt){
+    var i;
+    for(i=parts.length-1;i>=0;i--){
+      var p = parts[i];
+      p.life -= dt;
+      if(p.life <= 0){ parts.splice(i,1); continue; }
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      if(p.kind === 'smoke'){ p.vy -= 24*S*dt; p.vx *= (1 - 1.4*dt); }
+      else if(p.kind === 'ember'){ p.vy -= 40*S*dt; p.vx *= (1 - 0.9*dt); }
+      else { p.vy += 420*S*dt; p.vx *= (1 - 1.1*dt); }
+      p.rot += dt*3;
+    }
+    for(i=rings.length-1;i>=0;i--){
+      var r = rings[i]; r.t += dt;
+      if(r.t >= r.life) rings.splice(i,1);
+    }
+    for(i=floats.length-1;i>=0;i--){
+      var f = floats[i]; f.t += dt; f.y += f.vy*dt; f.vy *= (1 - 1.6*dt);
+      if(f.t >= f.life) floats.splice(i,1);
+    }
+    for(i=booms.length-1;i>=0;i--){
+      var b = booms[i]; b.t += dt;
+      if(b.t >= b.life) booms.splice(i,1);
+    }
+    // затухание тряски и вспышки
+    shakes.mag *= Math.max(0, 1 - CONFIG.fx.shakeDecay*dt);
+    shakes.x = rand(-1,1) * shakes.mag;
+    shakes.y = rand(-1,1) * shakes.mag;
+    flash *= Math.max(0, 1 - CONFIG.fx.flashDecay*dt);
+    if(flash < 0.004) flash = 0;
+  }
+  function clear(){ parts.length = 0; rings.length = 0; floats.length = 0; booms.length = 0; shakes.mag = 0; flash = 0; }
+  return { addPart:addPart, addRing:addRing, addFloat:addFloat, shake:shake, sunstrike:sunstrike,
+           blink:blink, kill:kill, miss:miss, fuse:fuse, update:update, clear:clear,
+           parts:function(){return parts;}, rings:function(){return rings;}, floats:function(){return floats;},
+           booms:function(){return booms;}, shakeOff:shakes, getFlash:function(){return flash;},
+           getFlashColor:function(){return flashColor;} };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  8. Игра: состояние, касты, разбор ошибок, статистика
+// ══════════════════════════════════════════════════════════════════════════════
+var Game = {
+  state:'menu',            // menu | playing | paused | results
+  time:0,                  // игровое время раунда (замирает на паузе), сек
+  countdownT:0,            // отсчёт перед стартом
+  units: [],
+  casts: [],               // ожидающие удара Sun Strike
+  reviews: [],             // разборы кастов (метки + вектор ошибки)
+  respawns: [],            // запланированные респавны
+  diff: DIFFICULTIES[2],
+  delay: CONFIG.strike.delayDefault,
+  dur: CONFIG.roundDefault,
+  lastCast: -99,
+  castsN:0, hitsN:0, kills:0, streak:0, bestStreak:0, score:0, mult:1,
+  missSum:0, missN:0, allDistSum:0, allDistN:0, timeErrSum:0, timeErrN:0,
+  records:[],              // {t, dist, hit, along} для графика
+  xpGain:0,
+  endAt:0,
+  pointer:{x:0,y:0, inside:false, active:false},
+  roundId:0
+};
+
+Game.reset = function(){
+  this.time = 0;
+  this.units.length = 0;
+  this.casts.length = 0;
+  this.reviews.length = 0;
+  this.respawns.length = 0;
+  this.castsN = 0; this.hitsN = 0; this.kills = 0;
+  this.streak = 0; this.bestStreak = 0; this.score = 0; this.mult = 1;
+  this.missSum = 0; this.missN = 0; this.allDistSum = 0; this.allDistN = 0;
+  this.timeErrSum = 0; this.timeErrN = 0;
+  this.records = [];
+  this.xpGain = 0;
+  this.lastCast = -99;
+  this.endAt = this.dur;
+  this.countdownT = CONFIG.countdown;
+  FX.clear();
+};
+
+Game.start = function(diffId, dur, delay){
+  this.diff = DIFFICULTIES[diffId] || DIFFICULTIES[2];
+  this.dur = dur || CONFIG.roundDefault;
+  this.delay = delay || CONFIG.strike.delayDefault;
+  this.roundId++;
+  this.reset();
+  this.state = 'playing';
+  // стартовые цели, разнесённые по дорожкам
+  for(var i=0;i<this.diff.count;i++){
+    // растягиваем стартовые цели по доступным дорожкам
+    var laneIdx = Math.floor(i * Lanes.length / this.diff.count) % Lanes.length;
+    var t = new Unit(this.spawnType(i), this.diff, laneIdx, chance(0.5));
+    // разносим стартовые позиции, чтобы цели не шли кучей
+    var push = (i * 90 + 40) * S * (Math.random() < 0.5 ? 1 : -1);
+    t.dist = clamp(t.dist + push, 20*S, t.lane.len - 20*S);
+    pathAtOut(t);
+    this.units.push(t);
+  }
+  SFX.unlock();
+  UI.showHud();
+};
+
+Game.spawnType = function(i){
+  var D = this.diff;
+  if(D.heroes <= 0) return 'creep';
+  if(D.heroes >= 1) return 'hero';
+  return chance(D.heroes) ? 'hero' : 'creep';
+};
+
+Game.effectiveRadius = function(){
+  return CONFIG.strike.radius * this.diff.radiusMul * S;
+};
+
+// ── Каст Sun Strike ──
+var outsideHintAt = -9;
+Game.cast = function(x, y){
+  if(this.state !== 'playing' || this.countdownT > 0) return false;
+  // точка вне арены (полоса HUD сверху / тёмные поля в портрете) — каст не тратим
+  var m = 12 * S;
+  if(x < Field.x - m || x > Field.x + Field.w + m || y < Field.y - m || y > Field.y + Field.h + m){
+    if(this.time - outsideHintAt > 2.5){ outsideHintAt = this.time; UI.toast('Вне арены — целься по дорожкам'); }
+    return false;
+  }
+  var cd = CONFIG.strike.castCooldown * (this.diff.cooldownMul || 1);
+  if(this.time - this.lastCast < cd) return false;
+  if(this.casts.length >= CONFIG.strike.maxActive) return false;
+  this.lastCast = this.time;
+  var me = this;
+  this.casts.push({
+    x:x, y:y, t:0,
+    at:this.time + this.delay,
+    radius:this.effectiveRadius(),
+    resolved:false,
+    // снимок позиций целей в момент каста (для показа «где цель была»)
+    snap:this.units.map(function(u){ return {id:u.id, x:u.pos.x, y:u.pos.y}; })
+  });
+  this.castsN++;
+  SFX.cast();
+  FX.addRing(x, y, 2*S, this.effectiveRadius()*1.5, 0.3, '255,200,110', 1.6);
+  for(var i=0;i<7;i++){
+    var a = rand(0,TAU);
+    FX.addPart(x + Math.cos(a)*10*S, y + Math.sin(a)*10*S, Math.cos(a)*rand(30,90)*S, Math.sin(a)*rand(30,90)*S - 20*S,
+               rand(0.2,0.4), rand(1.2,2.4)*S, '255,200,120','spark');
+  }
+  Save.saveThrottled(2500);   // не теряем прогресс, если игрок закроет вкладку посреди раунда
+  UI.syncHud();
+  return true;
+};
+
+// разрешение каста: пришёл момент урона
+Game.resolveCast = function(c){
+  var R = c.radius, best = null, bestD = 1e9, i, u, d;
+  // ближайшая цель (её и считаем «той, по которой били»)
+  for(i=0;i<this.units.length;i++){
+    u = this.units[i];
+    d = len(u.pos.x - c.x, u.pos.y - c.y);
+    if(d < bestD){ bestD = d; best = u; }
+  }
+  // кто попал под зону
+  var killed = [];
+  for(i=0;i<this.units.length;i++){
+    u = this.units[i];
+    if(len(u.pos.x - c.x, u.pos.y - c.y) <= R + u.r*0.35){ killed.push(u); }
+  }
+  var hit = killed.length > 0;
+
+  FX.sunstrike(c.x, c.y, R);
+  SFX.impact();
+
+  // ── урон по попавшим ──
+  for(i=0;i<killed.length;i++){
+    u = killed[i];
+    u.hp -= CONFIG.strike.damage;
+    u.hitFlash = 1;
+    // по ТЗ прямое попадание = килл: 900 урона гарантированно больше HP любой цели
+    if(u.hp <= 0) this.killUnit(u, c);
+  }
+
+  // ── аналитика ошибки ──
+  var rec = null;
+  if(best){
+    var vx = best.refDir.x, vy = best.refDir.y;               // «намеренное» направление движения
+    var ex = c.x - best.pos.x, ey = c.y - best.pos.y;         // вектор ошибки: куда упало vs где цель
+    var along = ex*vx + ey*vy;                                // >0 = перелёт, <0 = отставание
+    var perp  = -ex*vy + ey*vx;                               // боковая ошибка
+    var spd = len(best.vel.x, best.vel.y);
+    var nominal = best.baseSpeed;
+    var stopped = spd < nominal * 0.30;
+    var snap = null;
+    for(i=0;i<c.snap.length;i++) if(c.snap[i].id === best.id) snap = c.snap[i];
+    rec = {
+      x:c.x, y:c.y,                       // куда кликнул
+      ux:best.pos.x, uy:best.pos.y,       // где цель в момент удара
+      cx:snap ? snap.x : best.pos.x, cy:snap ? snap.y : best.pos.y,  // где цель была в момент каста
+      along:along, perp:perp, dist:bestD, hit:hit, stopped:stopped,
+      timeErr: nominal > 1 ? along / nominal : 0,
+      type:best.type, speed:spd, mult:1
+    };
+  }
+
+  // ── счёт ──
+  if(hit){
+    this.hitsN++;
+    this.streak++;
+    if(this.streak > this.bestStreak) this.bestStreak = this.streak;
+    this.mult = Math.min(CONFIG.score.multMax, 1 + Math.floor(this.streak / CONFIG.score.multStep) * CONFIG.score.multStepVal);
+    var target = killed[0] || best;
+    var sp = target ? len(target.vel.x, target.vel.y) : 0;
+    var bonus = Math.round(CONFIG.score.speedBonus * clamp(sp / (CONFIG.score.speedRef * S), 0, 1));
+    var centre = (rec && rec.dist < R*0.2) ? CONFIG.score.centreBonus : 0;
+    var gain = Math.round((CONFIG.score.base + bonus + centre) * this.mult);
+    this.score += gain;
+    this.kills += killed.length;
+    if(rec) rec.mult = this.mult;
+    // всплывашки
+    for(i=0;i<killed.length;i++){
+      var ku = killed[i];
+      FX.addFloat(ku.pos.x, ku.pos.y - 26*S, '-' + CONFIG.strike.damage, '#ffd15c', 15*S);
+    }
+    FX.addFloat(c.x, c.y - 46*S, '+' + gain + (this.mult > 1 ? '  ×' + String(this.mult).replace('.', ',') : ''), '#9ee06a', 16*S);
+    if(killed.length > 1) FX.addFloat(c.x, c.y - 70*S, 'ДВОЙНОЕ! +' + killed.length, '#ffc247', 17*S);
+    if(this.streak % CONFIG.score.multStep === 0){
+      SFX.streak(this.streak);
+      FX.addFloat(c.x, c.y - 92*S, 'СТРИК ' + this.streak + '  ×' + fmt1(this.mult), '#ff9a3c', 18*S);
+      FX.addRing(c.x, c.y, R*0.6, R*2.2, 0.5, '255,170,60', 2.6);
+    }
+    SFX.hit(clamp(1 + Math.floor(this.streak/6)*0.08, 1, 1.5));
+    // XP
+    var xp = CONFIG.score.xpPerKill * killed.length + CONFIG.score.xpPerHit;
+    this.xpGain += xp;
+    UI.flashStreak(this.streak);
+  } else {
+    this.streak = 0; this.mult = 1;
+    SFX.miss();
+    if(!best) FX.addFloat(c.x, c.y - 26*S, 'нет цели в поле', '#d9a08e', Math.max(11, 13*S));
+    FX.miss(c.x, c.y, R);
+  }
+
+  // ── копим статистику ──
+  if(rec){
+    this.records.push({ t:this.time, along:rec.along, dist:rec.dist, hit:hit, perp:rec.perp,
+                        timeErr:rec.timeErr, stopped:rec.stopped });
+    this.allDistSum += rec.dist; this.allDistN++;
+    if(!hit){ this.missSum += rec.dist; this.missN++; }
+    if(!rec.stopped){ this.timeErrSum += Math.abs(rec.timeErr); this.timeErrN++; }
+    Save.addShot(rec.along, rec.perp, hit);
+    rec.hint = Game.errorHint(rec, R);
+    rec.until = this.time + CONFIG.strike.revealTime;
+    this.reviews.push(rec);
+    while(this.reviews.length > 4) this.reviews.shift();   // не засоряем экран разборами
+  } else {
+    this.records.push({ t:this.time, along:0, dist:-1, hit:false, perp:0, timeErr:0, stopped:true });
+  }
+  UI.syncHud();
+};
+
+// Человеческая расшифровка ошибки упреждения
+Game.errorHint = function(r, R){
+  var px = Math.round(Math.abs(r.along) / S);      // снос по курсу в «дизайн-px»
+  var off = Math.round(r.dist / S);                // полная ошибка
+  if(r.hit){
+    if(r.dist < R*0.18) return 'Идеально в центр, полный урон';
+    return 'Попадание, но ' + off + ' px от цели — можно точнее';
+  }
+  if(r.stopped) return 'Цель встала — кладите ровно в неё, упреждение не нужно';
+  if(Math.abs(r.along) < 14*S && Math.abs(r.perp) > 14*S)
+    return 'Снос в бок: веди упреждение строго вдоль курса цели';
+  if(r.along > 14*S) return 'УПРЕЖДАЙ МЕНЬШЕ: смести точку на ~' + px + ' px назад по курсу';
+  if(r.along < -14*S) return 'УПРЕЖДАЙ БОЛЬШЕ: смести точку на ~' + px + ' px вперёд по курсу';
+  return 'Почти по курсу, но мимо: ' + off + ' px';
+};
+
+Game.killUnit = function(u, c){
+  u.hp = 0; u.dead = true;
+  FX.kill(u.pos.x, u.pos.y, this.effectiveRadius()*0.6);
+  for(var i=0;i<10;i++){
+    var a = rand(0,TAU);
+    FX.addPart(u.pos.x, u.pos.y, Math.cos(a)*rand(40,170)*S, Math.sin(a)*rand(40,170)*S, rand(0.4,0.9),
+               rand(2,4.4)*S, u.isHero ? '200,120,255' : '120,200,90', 'smoke');
+  }
+  // очередь на респавн
+  var U = CONFIG.unit;
+  this.respawns.push({ at:this.time + CONFIG.restartDelay + rand(U.respawnJitter[0], U.respawnJitter[1]), type:u.type });
+};
+
+Game.update = function(dt){
+  var i;
+  FX.update(dt);
+  if(this.state !== 'playing') return;
+
+  // отсчёт перед стартом: мир ещё не двигается и время раунда НЕ идёт
+  if(this.countdownT > 0){
+    var prev = Math.ceil(this.countdownT);
+    this.countdownT -= dt;
+    var cur = Math.ceil(this.countdownT);
+    if(cur !== prev && cur > 0) SFX.countdown(false);
+    if(this.countdownT <= 0) SFX.countdown(true);
+    this.updateCasts(dt);
+    UI.syncHud();
+    return;
+  }
+  this.time += dt;   // с этого момента тикает таймер раунда
+
+  // цели
+  for(i=this.units.length-1;i>=0;i--){
+    var u = this.units[i];
+    u.update(dt, this.time);
+    if(u.dead) this.units.splice(i,1);
+  }
+  // респавн убитых
+  for(i=this.respawns.length-1;i>=0;i--){
+    var r = this.respawns[i];
+    if(this.time >= r.at){
+      this.respawns.splice(i,1);
+      if(this.units.length < this.diff.count) this.spawnOne(r.type);
+    }
+  }
+  // не даём полю опустеть
+  if(this.units.length === 0 && this.respawns.length === 0){
+    this.spawnOne(this.spawnType(0));
+  }
+
+  this.updateCasts(dt);
+
+  // разборы кастов живут ограниченное время
+  for(i=this.reviews.length-1;i>=0;i--){
+    if(this.time >= this.reviews[i].until) this.reviews.splice(i,1);
+  }
+
+  // таймер раунда
+  if(this.time >= this.endAt && this.state === 'playing') this.endRound();
+
+  UI.syncHud();
+};
+
+Game.spawnOne = function(type){
+  type = type || this.spawnType(0);
+  // выбираем дорожку так, чтобы цели распределялись равномерно
+  var counts = new Array(Lanes.length).fill(0);
+  for(var i=0;i<this.units.length;i++) counts[this.units[i].laneIdx]++;
+  var bestLane = 0;
+  for(var j=1;j<counts.length;j++) if(counts[j] < counts[bestLane]) bestLane = j;
+  var u = new Unit(type, this.diff, bestLane, chance(0.5));
+  // если на этой дорожке уже кто-то есть рядом — отодвинем
+  for(var k=0;k<this.units.length;k++){
+    var o = this.units[k];
+    if(o.laneIdx === u.laneIdx && Math.abs(o.dist - u.dist) < CONFIG.lanes.minGap * S){
+      u.dist = clamp(u.dist + CONFIG.lanes.minGap * S * (u.dir > 0 ? 1 : -1), 10*S, u.lane.len - 10*S);
+    }
+  }
+  pathAtOut(u);
+  this.units.push(u);
+  FX.addRing(u.pos.x, u.pos.y, 2*S, 26*S, 0.4, u.isHero ? '190,120,255' : '120,200,90', 1.6);
+  return u;
+};
+
+Game.updateCasts = function(dt){
+  for(var i=this.casts.length-1;i>=0;i--){
+    var c = this.casts[i];
+    c.t += dt;
+    if(!c.resolved && this.time >= c.at){
+      c.resolved = true;
+      this.resolveCast(c);
+      this.casts.splice(i,1);
+      continue;
+    }
+    if(this.time > c.at + 0.2) this.casts.splice(i,1);
+  }
+};
+
+Game.endRound = function(){
+  this.state = 'results';
+  // касты, чей удар не успел прийти до конца раунда, не считаем — иначе точность падает ни за что
+  for(var pc=0; pc<this.casts.length; pc++) if(!this.casts[pc].resolved) this.castsN--;
+  this.casts.length = 0;
+  SFX.roundEnd();
+  // итоговый XP
+  var xp = this.xpGain + CONFIG.score.xpPerRound;
+  var ups = Save.addXp(xp);
+  var d = Save.data;
+  d.rounds++; d.kills += this.kills; d.casts += this.castsN; d.hits += this.hitsN;
+  var acc = this.castsN ? this.hitsN / this.castsN : 0;
+  var newAcc = acc > d.bestAcc;
+  var newScore = this.score > d.bestScore;
+  if(newAcc) d.bestAcc = acc;
+  if(newScore) d.bestScore = this.score;
+  if(this.bestStreak > d.bestStreak) d.bestStreak = this.bestStreak;
+  Save.save();
+  if(ups > 0) SFX.levelUp();
+  UI.showResults({ acc:acc, newAcc:newAcc, newScore:newScore, ups:ups, xpGain:xp });
+};
+
+Game.stats = function(){
+  var casts = this.castsN || 0, hits = this.hitsN || 0;
+  // систематический снос: средние along/perp по несдвинутым (двигавшимся) целям
+  var aSum = 0, pSum = 0, an = 0;
+  for(var i=0;i<this.records.length;i++){
+    var r = this.records[i];
+    if(r.dist < 0 || r.stopped) continue;
+    aSum += r.along; pSum += r.perp; an++;
+  }
+  return {
+    acc: casts ? hits/casts : 0,
+    casts: casts, hits: hits, kills: this.kills,
+    streak: this.streak, best: this.bestStreak, score: this.score, mult: this.mult,
+    avgMiss: this.missN ? this.missSum / this.missN / S : -1,        // средний промах (только промахи), дизайн-px
+    avgDist: this.allDistN ? this.allDistSum / this.allDistN / S : -1, // средняя ошибка по всем кастам
+    avgTimeErr: this.timeErrN ? this.timeErrSum / this.timeErrN : -1, // средняя ошибка во времени, сек
+    meanAlong: an ? aSum / an / S : 0,    // средний снос по курсу, дизайн-px (+ перелёт, − отставание)
+    meanPerp: an ? pSum / an / S : 0,     // средний боковой снос, дизайн-px
+    movedN: an                            // по скольким кастам считался снос (цели, которые двигались)
+  };
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  9. Рендер: земля (кэш в offscreen-canvas), дорожки, туман, юниты, эффекты
+// ══════════════════════════════════════════════════════════════════════════════
+var ground = document.createElement('canvas');
+var gctx = ground.getContext('2d');
+
+function resize(){
+  var w = window.innerWidth || document.documentElement.clientWidth;
+  var h = window.innerHeight || document.documentElement.clientHeight;
+  dpr = Math.min(CONFIG.fx.dprMax, window.devicePixelRatio || 1);
+  canvas.width  = Math.max(1, Math.floor(w * dpr));
+  canvas.height = Math.max(1, Math.floor(h * dpr));
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  W = w; H = h;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // рисуем в CSS-px
+  computeScale();
+  rebuildField();
+  rebuildLanes();
+  var n = Save.data.set.diff;
+  if(Game.state === 'playing' || Game.state === 'paused'){
+    // на ресайзе аккуратно переселяем юнитов, сохраняя прогресс
+    for(var i=0;i<Game.units.length;i++){
+      var u = Game.units[i];
+      u.lane = Lanes[u.laneIdx % Lanes.length];
+      u.r = (u.isHero ? CONFIG.unit.heroR : CONFIG.unit.creepR) * S;
+      u.dist = clamp(u.dist / (u.lane.len || 1) * u.lane.len, 0, u.lane.len);
+      pathAtOut(u);
+      u.trail.length = 0;
+    }
+  }
+  drawGroundCache();
+  buildFogCache();
+  Game.diff = DIFFICULTIES[Game.state === 'menu' ? n : Game.diff.id];
+}
+
+// ── Процедурная земля: рисуется один раз при ресайзе в offscreen-канвас ──
+function drawGroundCache(){
+  ground.width = Math.max(1, Math.floor(W * dpr));
+  ground.height = Math.max(1, Math.floor(H * dpr));
+  var g = gctx;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0,0,W,H);
+
+  // база: земля
+  var bg = g.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0, '#0d1109');
+  bg.addColorStop(0.45, '#161c11');
+  bg.addColorStop(1, '#0a0d08');
+  g.fillStyle = bg; g.fillRect(0,0,W,H);
+
+  // крупные пятна земли/травы
+  var spots = clamp(Math.round((W*H)/16000), 40, 220);
+  for(var i=0;i<spots;i++){
+    var x = Math.random()*W, y = Math.random()*H;
+    var r = rand(40, 190) * S;
+    var grd = g.createRadialGradient(x,y,0,x,y,r);
+    var kind = Math.random();
+    var c = kind < 0.45 ? '48,58,34' : (kind < 0.75 ? '64,54,32' : '30,40,26');
+    grd.addColorStop(0, 'rgba(' + c + ',0.30)');
+    grd.addColorStop(1, 'rgba(' + c + ',0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+  }
+  // пыльные разводы
+  g.globalAlpha = 0.25;
+  for(var j=0;j<clamp(Math.round((W*H)/90000), 8, 40);j++){
+    g.strokeStyle = 'rgba(90,74,44,0.35)';
+    g.lineWidth = rand(1,3)*S;
+    g.beginPath();
+    var px = Math.random()*W, py = Math.random()*H;
+    g.moveTo(px,py);
+    for(var k=0;k<4;k++){ px += rand(-80,80)*S; py += rand(-40,40)*S; g.lineTo(px,py); }
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+
+  // дорожки (протоптанная земля) — берём из Lanes
+  for(var li=0; li<Lanes.length; li++){
+    var lane = Lanes[li];
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(86,70,42,0.30)';
+    g.lineWidth = CONFIG.lanes.roadWidth * S;
+    strokePath(g, lane, 12*S);
+    g.strokeStyle = 'rgba(120,100,60,0.16)';
+    g.lineWidth = CONFIG.lanes.roadWidth * 0.45 * S;
+    strokePath(g, lane, 12*S);
+    // пунктирный «маршрут» — помогает читать путь
+    g.setLineDash([9*S, 15*S]);
+    g.strokeStyle = 'rgba(190,170,110,0.14)';
+    g.lineWidth = 1.6*S;
+    strokePath(g, lane, 12*S);
+    g.setLineDash([]);
+  }
+
+  // рамка полигона
+  if(CONFIG.field.border){
+    g.strokeStyle = 'rgba(200,170,90,0.18)';
+    g.lineWidth = 1.5;
+    g.strokeRect(Field.x + 0.5, Field.y + 0.5, Field.w - 1, Field.h - 1);
+    g.strokeStyle = 'rgba(200,170,90,0.06)';
+    g.strokeRect(Field.x + 5.5, Field.y + 5.5, Field.w - 11, Field.h - 11);
+  }
+}
+
+function strokePath(g, lane, inset){
+  g.beginPath();
+  g.moveTo(lane.pts[0].x, lane.pts[0].y);
+  for(var i=1;i<lane.pts.length;i++) g.lineTo(lane.pts[i].x, lane.pts[i].y);
+  g.stroke();
+}
+
+// ── Туман войны по краям (Хард/Insane). Кэшируется при ресайзе ──
+var fogCache = document.createElement('canvas');
+function buildFogCache(){
+  fogCache.width = Math.max(1, Math.floor(W*dpr));
+  fogCache.height = Math.max(1, Math.floor(H*dpr));
+  var g = fogCache.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0,0,W,H);
+
+  // верх/низ
+  var grd = g.createLinearGradient(0, Field.y - 40*S, 0, Field.y + Field.h*0.22);
+  grd.addColorStop(0, 'rgba(3,5,4,0.95)');
+  grd.addColorStop(1, 'rgba(3,5,4,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, W, Field.y + Field.h*0.22);
+  grd = g.createLinearGradient(0, Field.y + Field.h + 40*S, 0, Field.y + Field.h*0.78);
+  grd.addColorStop(0, 'rgba(3,5,4,0.95)');
+  grd.addColorStop(1, 'rgba(3,5,4,0)');
+  g.fillStyle = grd; g.fillRect(0, Field.y + Field.h*0.78, W, H - (Field.y + Field.h*0.78));
+  // лево/право
+  grd = g.createLinearGradient(Field.x - 30*S, 0, Field.x + Field.w*0.13, 0);
+  grd.addColorStop(0, 'rgba(3,5,4,0.93)');
+  grd.addColorStop(1, 'rgba(3,5,4,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, Field.x + Field.w*0.13, H);
+  grd = g.createLinearGradient(Field.x + Field.w + 30*S, 0, Field.x + Field.w*0.87, 0);
+  grd.addColorStop(0, 'rgba(3,5,4,0.93)');
+  grd.addColorStop(1, 'rgba(3,5,4,0)');
+  g.fillStyle = grd; g.fillRect(Field.x + Field.w*0.87, 0, W - (Field.x + Field.w*0.87), H);
+  // лёгкая дымка по всему полю
+  g.fillStyle = 'rgba(6,10,8,0.15)';
+  g.fillRect(0,0,W,H);
+}
+
+function drawFog(){
+  var f = Game.diff.fog || 0;
+  if(f <= 0) return;
+  if(Math.abs(f - 1) < 0.02){ ctx.drawImage(fogCache, 0, 0, W, H); return; }
+  ctx.save();
+  ctx.globalAlpha = f;
+  ctx.drawImage(fogCache, 0, 0, W, H);
+  ctx.restore();
+}
+
+
+// ── Юниты ──
+function drawUnits(time){
+  var units = Game.units, labels = CONFIG.fx.unitLabels;
+  for(var i=0;i<units.length;i++){
+    var u = units[i], x = u.pos.x, y = u.pos.y, r = u.r;
+    // тень
+    ctx.beginPath();
+    ctx.ellipse(x, y + r*0.45, r*1.30, r*0.62, 0, 0, TAU);
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.fill();
+
+    // след движения
+    if(u.trail.length > 1){
+      for(var t=0;t<u.trail.length;t++){
+        var tp = u.trail[t], a = clamp(tp.t,0,1) * 0.20;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, r*0.42*(0.4 + tp.t*0.6), 0, TAU);
+        ctx.fillStyle = u.isHero ? 'rgba(178,120,255,' + a + ')' : 'rgba(140,200,90,' + a + ')';
+        ctx.fill();
+      }
+    }
+
+    var spawn = easeOut(clamp(u.spawnT,0,1));
+    ctx.save();
+    ctx.globalAlpha = spawn;
+
+    if(u.type === 'creep'){
+      // ── КРИП: приземистое тело-ромб ──
+      ctx.beginPath();
+      ctx.moveTo(x, y - r*1.05);
+      ctx.lineTo(x + r*0.95, y);
+      ctx.lineTo(x, y + r*0.95);
+      ctx.lineTo(x - r*0.95, y);
+      ctx.closePath();
+      var cg = ctx.createLinearGradient(x, y - r, x, y + r);
+      cg.addColorStop(0, '#8dc063');
+      cg.addColorStop(1, '#3f5c2c');
+      ctx.fillStyle = cg; ctx.fill();
+      ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(20,30,14,0.9)'; ctx.stroke();
+      // глаза-точки по направлению движения
+      ctx.fillStyle = '#12200c';
+      ctx.beginPath(); ctx.arc(x + u.refDir.x*r*0.30, y + u.refDir.y*r*0.28, r*0.14, 0, TAU); ctx.fill();
+    } else {
+      // ── ГЕРОЙ: круглое тело с «плащом» ──
+      var hg = ctx.createRadialGradient(x - r*0.3, y - r*0.4, r*0.15, x, y, r*1.15);
+      hg.addColorStop(0, '#f2c8a0');
+      hg.addColorStop(0.55, '#c2703f');
+      hg.addColorStop(1, '#5e2a1c');
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
+      ctx.fillStyle = hg; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(24,12,8,0.95)'; ctx.stroke();
+      // наплечник-дуга указывает курс
+      var ang = Math.atan2(u.refDir.y, u.refDir.x);
+      ctx.beginPath();
+      ctx.arc(x, y, r*0.62, ang - 1.15, ang + 1.15);
+      ctx.strokeStyle = 'rgba(255,196,110,0.85)'; ctx.lineWidth = 3; ctx.stroke();
+    }
+
+    // HP-полоска (у героя шире)
+    var hpw = r*2.1, hph = 3.4;
+    var hpx = x - hpw/2, hpy = y - r*1.85 - hph;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(hpx-1, hpy-1, hpw+2, hph+2);
+    var frac = clamp(u.hp / u.hpMax, 0, 1);
+    ctx.fillStyle = frac > 0.6 ? '#7fc35a' : (frac > 0.3 ? '#e0b23a' : '#d5432c');
+    ctx.fillRect(hpx, hpy, hpw*frac, hph);
+    if(!u.isHero){
+      // у крипа HP маленькое — рисуем тонкую отметку
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(hpx, hpy + hph, hpw, 1);
+    }
+
+    // индикатор «стоит» — цель обманно замерла
+    if(u.speed < u.baseSpeed*0.25 && Game.countdownT <= 0){
+      ctx.beginPath(); ctx.arc(x, y, r*1.5, 0, TAU);
+      ctx.strokeStyle = 'rgba(230,220,120,0.35)'; ctx.lineWidth = 1.2;
+      ctx.setLineDash([3,4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // рывок — след скорости
+    if(u.dash > 0){
+      ctx.beginPath(); ctx.arc(x, y, r*1.25, 0, TAU);
+      ctx.strokeStyle = 'rgba(255,150,60,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // удар-вспышка
+    if(u.hitFlash > 0){
+      ctx.beginPath(); ctx.arc(x, y, r*1.2, 0, TAU);
+      ctx.fillStyle = 'rgba(255,240,180,' + (u.hitFlash*0.55) + ')'; ctx.fill();
+    }
+    // блинк-всполох
+    if(u.blinkFx > 0){
+      ctx.beginPath(); ctx.arc(x, y, r*(1.1 + (1-u.blinkFx)*2.2), 0, TAU);
+      ctx.strokeStyle = 'rgba(110,205,255,' + (u.blinkFx*0.7) + ')'; ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // подпись
+    if(labels && spawn > 0.6 && Game.countdownT <= 0){
+      ctx.font = '600 ' + Math.max(9, Math.round(9.5*S + 3)) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText(u.isHero ? 'ГЕРОЙ' : 'КРИП', x, y + r*1.25);
+      ctx.fillStyle = u.isHero ? 'rgba(226,178,255,0.85)' : 'rgba(178,222,140,0.8)';
+      ctx.fillText(u.isHero ? 'ГЕРОЙ' : 'КРИП', x, y + r*1.25);
+    }
+  }
+}
+
+// ── Маркеры кастов («кипят» до удара) ──
+function drawCasts(time){
+  var cs = Game.casts;
+  for(var i=0;i<cs.length;i++){
+    var c = cs[i], R = c.radius;
+    var total = Math.max(0.05, Game.delay);
+    var p = clamp(c.t / total, 0, 1);              // 0 → 1 за время до удара
+    var wob = Math.sin(time*26) * (1 - p*0.5);
+
+    // круг зоны поражения
+    ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, TAU);
+    ctx.fillStyle = 'rgba(255,140,30,' + (0.05 + 0.06*p) + ')';
+    ctx.fill();
+    ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,190,90,' + (0.30 + 0.25*p) + ')'; ctx.stroke();
+
+    // «кипящая» волнистая кромка — визуальный таймер
+    ctx.beginPath();
+    var pts = CONFIG.strike.fusePoints;
+    for(var k=0;k<=pts;k++){
+      var a = k/pts * TAU;
+      var rr = R * (1 + CONFIG.strike.fuseWobble * wob * Math.sin(a*5 + time*11));
+      var px = c.x + Math.cos(a)*rr, py = c.y + Math.sin(a)*rr*0.98;
+      if(k === 0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(255,' + Math.round(160 + 80*p) + ',60,' + (0.75 + 0.25*Math.sin(time*18)) + ')';
+    ctx.lineWidth = 2.2; ctx.stroke();
+
+    // заливка по мере «нагрева»
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, R * 0.55, -Math.PI/2, -Math.PI/2 + TAU*p);
+    ctx.lineTo(c.x, c.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,' + Math.round(120 + 110*p) + ',40,0.13)';
+    ctx.fill();
+
+    // точки-искры из центра
+    ctx.beginPath(); ctx.arc(c.x, c.y, 4*S + 2*p, 0, TAU);
+    ctx.fillStyle = 'rgba(255,240,190,' + (0.55 + 0.45*Math.sin(time*22)) + ')';
+    ctx.fill();
+
+    // обратный отсчёт в миллисекундах — помогает свыкнуться с таймингом
+    if(CONFIG.guide.showMs){
+      var leftMs = Math.max(0, Math.round((c.at - Game.time)*1000));
+      ctx.font = '700 ' + Math.round(10*S + 3) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillStyle = 'rgba(255,225,170,0.9)';
+      ctx.fillText(leftMs + ' мс', c.x, c.y - R - 22*S);
+    }
+
+    // шкала запала
+    var bw = R*1.4, bh = 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(c.x - bw/2 - 1, c.y - R - 16*S - 1, bw + 2, bh + 2);
+    ctx.fillStyle = p > 0.78 ? '#ff7a1a' : '#ffc247';
+    ctx.fillRect(c.x - bw/2, c.y - R - 16*S, bw*p, bh);
+
+    // искры-огоньки
+    if(Math.random() < 0.34) FX.fuse(c.x, c.y, R * rand(0.4, 1.0));
+  }
+}
+
+// ── Разбор каста: куда кликнул vs где была цель + вектор ошибки ──
+function drawReviews(time){
+  var rv = Game.reviews;
+  for(var i=0;i<rv.length;i++){
+    var r = rv[i];
+    var life = clamp((r.until - Game.time) / CONFIG.strike.revealTime, 0, 1);  // 1 → 0
+    var a = Math.min(clamp((1 - life) / 0.12, 0, 1), clamp(life / 0.38, 0, 1));
+    ctx.save();
+    ctx.globalAlpha = clamp(a, 0, 1);
+
+    // где цель была в момент каста (призрак)
+    if(CONFIG.fx.reviewGhost){
+      ctx.beginPath(); ctx.arc(r.cx, r.cy, 7*S, 0, TAU);
+      ctx.fillStyle = 'rgba(140,190,255,0.35)'; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(r.cx, r.cy); ctx.lineTo(r.cx + (r.x-r.cx), r.cy + (r.y-r.cy));
+      ctx.strokeStyle = 'rgba(140,190,255,0.22)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // где цель оказалась в момент удара
+    ctx.beginPath(); ctx.arc(r.ux, r.uy, 9*S, 0, TAU);
+    ctx.fillStyle = r.hit ? 'rgba(160,240,140,0.85)' : 'rgba(230,220,210,0.85)'; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.stroke();
+
+    // куда кликнул игрок
+    var xc = r.x, yc = r.y;
+    ctx.beginPath(); ctx.moveTo(xc - 8*S, yc); ctx.lineTo(xc + 8*S, yc);
+    ctx.moveTo(xc, yc - 8*S); ctx.lineTo(xc, yc + 8*S);
+    ctx.strokeStyle = r.hit ? 'rgba(255,214,120,0.95)' : 'rgba(255,120,80,0.95)';
+    ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(xc, yc, 10*S, 0, TAU);
+    ctx.strokeStyle = r.hit ? 'rgba(255,214,120,0.6)' : 'rgba(255,120,80,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+
+    // вектор ошибки: клик → цель
+    ctx.beginPath(); ctx.moveTo(xc, yc); ctx.lineTo(r.ux, r.uy);
+    ctx.strokeStyle = r.hit ? 'rgba(160,240,140,0.9)' : 'rgba(255,110,70,0.95)';
+    ctx.lineWidth = 2; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+    // острие
+    var ang = Math.atan2(r.uy - yc, r.ux - xc);
+    ctx.beginPath();
+    ctx.moveTo(r.ux, r.uy);
+    ctx.lineTo(r.ux - Math.cos(ang - 0.4)*9*S, r.uy - Math.sin(ang - 0.4)*9*S);
+    ctx.lineTo(r.ux - Math.cos(ang + 0.4)*9*S, r.uy - Math.sin(ang + 0.4)*9*S);
+    ctx.closePath();
+    ctx.fillStyle = r.hit ? 'rgba(160,240,140,0.95)' : 'rgba(255,110,70,0.95)'; ctx.fill();
+
+    // подпись ошибки: попадание/промах, величина и направление сноса
+    var dist = Math.round(r.dist / S);
+    var dirWord = r.stopped ? 'цель стояла'
+                : (Math.abs(r.along) < 14*S ? 'снос в бок'
+                : (r.along > 0 ? 'перелёт' : 'отставание'));
+    var label = (r.hit ? 'HIT ' : 'MISS ') + dist + ' px · ' + dirWord;
+    var fs1 = Math.max(12, Math.round(11*S + 4));
+    var fs2 = Math.max(10, Math.round(9.5*S + 3));
+    var twoLines = !!(r.hint && !r.hit);
+    // измеряем обе строки, чтобы плашка и отступы от краёв были корректными
+    ctx.font = '700 ' + fs1 + 'px system-ui, sans-serif';
+    var w1 = ctx.measureText(label).width, w2 = 0;
+    if(twoLines){ ctx.font = '600 ' + fs2 + 'px system-ui, sans-serif'; w2 = ctx.measureText(r.hint).width; }
+    var mw = Math.max(w1, w2);
+    var tx = clamp((r.x + r.ux)/2, mw/2 + 8, Math.max(mw/2 + 8, W - mw/2 - 8));
+    var ty = clamp(Math.min(r.y, r.uy) - 62*S, 44*S, H - 30*S);
+    // плашка-подложка под обе строки
+    var barTop = ty - fs1 - 4;
+    var barH = fs1 + (twoLines ? fs2 + 8 : 0) + 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(tx - mw/2 - 6, barTop, mw + 12, barH);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = r.hit ? '#a8f08c' : '#ff9a7a';
+    ctx.fillText(label, tx, ty);
+    // вторая строка — что делать с упреждением
+    if(twoLines){
+      ctx.font = '600 ' + fs2 + 'px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(255,214,140,0.95)';
+      ctx.fillText(r.hint, tx, ty + 4);
+    }
+    ctx.restore();
+  }
+}
+
+// ── Взрывы: столб солнечного света сверху вниз ──
+function drawBooms(time){
+  var bs = FX.booms();
+  var darkMul = 1 / Math.max(1, bs.length);   // несколько взрывов не должны затемнять экран в ноль
+  for(var i=0;i<bs.length;i++){
+    var b = bs[i], p = clamp(b.t / b.life, 0, 1);
+    // профиль: мгновенный удар → затухание
+    var core = p < 0.18 ? p/0.18 : (1 - (p-0.18)/0.82);
+    var alpha = clamp(core, 0, 1);
+    var w = b.r * (0.55 + 0.85*(1-p)) * (1 + 0.15*Math.sin(time*40));
+
+    // столб света от верха поля до земли
+    ctx.save();
+    var topY = Field.y - 30*S, botY = b.y;
+
+    // 1) прижигаем всё вокруг: рисуем широкую «тень» и вырезаем из неё конус столба
+    if(CONFIG.strike.beamDarken > 0){
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      var bw0 = b.r * CONFIG.strike.beamWidthMul * (0.6 + 0.85*(1-p));
+      var bt0 = bw0 * CONFIG.strike.beamTopMul;
+      ctx.moveTo(b.x - bt0, topY);
+      ctx.lineTo(b.x + bt0, topY);
+      ctx.lineTo(b.x + bw0, botY + b.r*0.35);
+      ctx.lineTo(b.x - bw0, botY + b.r*0.35);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(2,4,5,' + (CONFIG.strike.beamDarken*0.55*alpha*darkMul) + ')';
+      ctx.fill('evenodd');
+      ctx.restore();
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    var col = ctx.createLinearGradient(0, topY, 0, botY);
+    col.addColorStop(0, 'rgba(255,240,190,' + (0.06*alpha) + ')');
+    col.addColorStop(0.55, 'rgba(255,215,120,' + (0.42*alpha) + ')');
+    col.addColorStop(1, 'rgba(255,150,40,' + (0.75*alpha) + ')');
+    // конус: сверху чуть шире
+    ctx.beginPath();
+    ctx.moveTo(b.x - w*1.25, topY);
+    ctx.lineTo(b.x + w*1.25, topY);
+    ctx.lineTo(b.x + w*0.72, botY);
+    ctx.lineTo(b.x - w*0.72, botY);
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+
+    // ядро столба (мягкое по краям, чтобы не было резких прямоугольников)
+    var coreW = w * 0.5;
+    var col2 = ctx.createLinearGradient(0, topY, 0, botY);
+    col2.addColorStop(0, 'rgba(255,255,245,' + (0.04*alpha) + ')');
+    col2.addColorStop(1, 'rgba(255,255,235,' + (0.8*alpha) + ')');
+    var col3 = ctx.createLinearGradient(b.x - coreW, 0, b.x + coreW, 0);
+    col3.addColorStop(0, 'rgba(255,255,235,0)');
+    col3.addColorStop(0.5, 'rgba(255,255,235,1)');
+    col3.addColorStop(1, 'rgba(255,255,235,0)');
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle = col2;
+    ctx.fillRect(b.x - coreW, topY, coreW*2, botY - topY);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = col3;
+    ctx.fillRect(b.x - coreW, topY, coreW*2, botY - topY);
+    ctx.globalAlpha = 1;
+
+    // вспышка на земле
+    var fg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r*2.1);
+    fg.addColorStop(0, 'rgba(255,255,240,' + (0.85*alpha) + ')');
+    fg.addColorStop(0.35, 'rgba(255,205,105,' + (0.45*alpha) + ')');
+    fg.addColorStop(1, 'rgba(255,120,20,0)');
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, b.r*2.1, b.r*1.25, 0, 0, TAU);
+    ctx.fillStyle = fg; ctx.fill();
+    ctx.restore();
+
+    // ударная волна по земле
+    var rw = b.r * (0.6 + p*2.3);
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, rw, rw*0.52, 0, 0, TAU);
+    ctx.strokeStyle = 'rgba(255,205,120,' + (0.55*(1-p)) + ')';
+    ctx.lineWidth = 3.2*(1-p) + 0.6; ctx.stroke();
+  }
+}
+
+// ── Частицы, кольца, всплывающие числа ──
+function drawParticles(){
+  var ps = FX.parts();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(var i=0;i<ps.length;i++){
+    var p = ps[i], a = clamp(p.life / p.max, 0, 1);
+    if(p.kind === 'smoke'){
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size*(1.8 - a*0.8), 0, TAU);
+      ctx.fillStyle = 'rgba(' + p.color + ',' + (0.16*a) + ')';
+      ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      continue;
+    }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size*(0.4 + a*0.8), 0, TAU);
+    ctx.fillStyle = 'rgba(' + p.color + ',' + a + ')';
+    ctx.fill();
+    if(p.kind === 'spark'){
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx*0.022, p.y - p.vy*0.022);
+      ctx.strokeStyle = 'rgba(' + p.color + ',' + (a*0.6) + ')';
+      ctx.lineWidth = p.size*0.7;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  var rs = FX.rings();
+  for(var j=0;j<rs.length;j++){
+    var r = rs[j], pr = r.t / r.life;
+    var rr = lerp(r.r0, r.r1, easeOut(pr));
+    ctx.beginPath();
+    ctx.ellipse(r.x, r.y, rr, rr*0.62, 0, 0, TAU);
+    ctx.strokeStyle = 'rgba(' + r.color + ',' + (0.75*(1-pr)) + ')';
+    ctx.lineWidth = r.width*(1-pr) + 0.4;
+    ctx.stroke();
+  }
+
+  var fs = FX.floats();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for(var k=0;k<fs.length;k++){
+    var f = fs[k], af = clamp(1 - f.t/f.life, 0, 1);
+    var pop = f.t < 0.12 ? lerp(0.6, 1.12, f.t/0.12) : lerp(1.12, 1, clamp((f.t-0.12)/0.2,0,1));
+    ctx.font = (f.bold ? '800 ' : '600 ') + Math.round(f.size*pop) + 'px system-ui, sans-serif';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,' + (0.75*af) + ')';
+    ctx.strokeText(f.text, f.x, f.y);
+    ctx.fillStyle = f.color;
+    ctx.globalAlpha = af;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Линия упреждения: показывает, куда цель дойдёт за время до удара ──
+function drawAimGuide(){
+  if(!CONFIG.guide.on || Game.state !== 'playing' || Game.countdownT > 0) return;
+  var ptr = Game.pointer;
+  if(!ptr.inside) return;
+  var pickR = CONFIG.guide.pickRadius * S, best = null, bestD = 1e9;
+  for(var i=0;i<Game.units.length;i++){
+    var u = Game.units[i];
+    var d = len(u.pos.x - ptr.x, u.pos.y - ptr.y);
+    if(d < bestD){ bestD = d; best = u; }
+  }
+  if(!best || bestD > pickR) return;
+  // линия «где цель будет к моменту удара»
+  var lx = best.pos.x + best.vel.x * Game.delay, ly = best.pos.y + best.vel.y * Game.delay;
+  var dotx = lx + best.refDir.x * CONFIG.guide.leadLine * S;
+  var doty = ly + best.refDir.y * CONFIG.guide.leadLine * S;
+  ctx.save();
+  ctx.setLineDash([4,5]);
+  // линия курса
+  ctx.beginPath();
+  ctx.moveTo(best.pos.x, best.pos.y);
+  ctx.lineTo(best.pos.x + best.refDir.x*(bestD + 70*S), best.pos.y + best.refDir.y*(bestD + 70*S));
+  ctx.strokeStyle = 'rgba(140,220,255,0.35)'; ctx.lineWidth = 1.2; ctx.stroke();
+  // маркер будущей позиции
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(lx, ly, 13*S, 0, TAU);
+  ctx.strokeStyle = 'rgba(140,220,255,0.75)'; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(lx, ly, 3*S, 0, TAU);
+  ctx.fillStyle = 'rgba(190,240,255,0.9)'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(dotx, doty);
+  ctx.strokeStyle = 'rgba(140,220,255,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+  // подсказка: сколько секунд осталось «жить» движению цели
+  ctx.font = '600 ' + Math.max(10, Math.round(9*S + 3)) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  var gtxt = 'цель здесь через ' + fmt1(Game.delay) + ' с';
+  var gtw = ctx.measureText(gtxt).width;
+  var gtx = Math.min(lx + 16*S, W - gtw - 10);
+  ctx.fillStyle = 'rgba(4,10,14,0.66)';
+  ctx.fillRect(gtx - 4, ly - 8, gtw + 8, 16);
+  ctx.fillStyle = 'rgba(160,225,255,0.92)';
+  ctx.fillText(gtxt, gtx, ly);
+  ctx.restore();
+}
+
+// ── Прицел под курсором ──
+function drawCursor(time){
+  var p = Game.pointer;
+  if(!p.inside || p.touch) return;
+  var R = Game.effectiveRadius();
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+  ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU);
+  ctx.strokeStyle = 'rgba(255,190,90,0.20)'; ctx.lineWidth = 1;
+  ctx.setLineDash([5,7]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(p.x, p.y, R*0.12, 0, TAU);
+  ctx.strokeStyle = 'rgba(255,214,120,0.9)'; ctx.lineWidth = 1.6; ctx.stroke();
+  var l = 9*S + 2;
+  ctx.beginPath();
+  ctx.moveTo(p.x - l, p.y); ctx.lineTo(p.x - l*0.35, p.y);
+  ctx.moveTo(p.x + l*0.35, p.y); ctx.lineTo(p.x + l, p.y);
+  ctx.moveTo(p.x, p.y - l); ctx.lineTo(p.x, p.y - l*0.35);
+  ctx.moveTo(p.x, p.y + l*0.35); ctx.lineTo(p.x, p.y + l);
+  ctx.strokeStyle = 'rgba(255,214,120,0.95)'; ctx.lineWidth = 1.8; ctx.stroke();
+  ctx.restore();
+}
+
+// ── Отсчёт перед раундом ──
+function drawCountdown(){
+  if(Game.countdownT <= 0) return;
+  var n = Math.ceil(Game.countdownT);
+  var frac = Game.countdownT - Math.floor(Game.countdownT);
+  var sc = 1 + (1 - frac) * 0.25;
+  ctx.save();
+  ctx.translate(W/2, Field.y + Field.h/2);
+  ctx.scale(sc, sc);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '800 ' + Math.round(64*S + 26) + 'px system-ui, sans-serif';
+  ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+  ctx.strokeText(n, 0, 0);
+  var g = ctx.createLinearGradient(0, -40, 0, 40);
+  g.addColorStop(0, '#fff0c0'); g.addColorStop(1, '#ff8a1a');
+  ctx.fillStyle = g; ctx.fillText(n, 0, 0);
+  ctx.font = '700 ' + Math.round(13*S + 6) + 'px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(233,227,209,0.85)';
+  ctx.fillText('ЗАДЕРЖКА УРОНА ' + fmt2(Game.delay) + ' с · ' + Game.diff.name.toUpperCase(), 0, 58*S + 26);
+  ctx.restore();
+}
+
+// ── Главный кадр ──
+function draw(time){
+  var sh = FX.shakeOff;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0,0,W,H);
+  // сдвиг тряски ТОЛЬКО целыми пикселями: дробный сдвиг заставляет браузер
+  // пересэмплировать всю землю и фоны каждый кадр (это и есть главный фриз)
+  ctx.translate(Math.round(sh.x), Math.round(sh.y));
+
+  ctx.drawImage(ground, 0, 0, W, H);      // земля (кэш)
+  drawFog();
+  drawCasts(time);
+  drawUnits(time);
+  drawBooms(time);
+  drawParticles();
+  drawAimGuide();
+  drawReviews(time);
+  drawCursor(time);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // прицел-палец для тача тоже полезен (рисуем поверх тряски)
+  if(Game.pointer.inside && Game.pointer.touch){
+    var p = Game.pointer;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Game.effectiveRadius()*0.5, 0, TAU);
+    ctx.strokeStyle = 'rgba(255,214,120,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // вспышка экрана
+  var fl = FX.getFlash();
+  if(fl > 0.002){
+    ctx.fillStyle = 'rgba(' + FX.getFlashColor() + ',' + Math.min(0.55, fl) + ')';
+    ctx.fillRect(0,0,W,H);
+  }
+  drawCountdown();
+
+  // пауза — затемняем
+  if(Game.state === 'paused'){
+    ctx.fillStyle = 'rgba(4,6,5,0.45)';
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  10. UI: HUD, экраны, аналитика (хитмап + график ошибок), тосты
+// ══════════════════════════════════════════════════════════════════════════════
+var UI = (function(){
+  var elMenu = $('menu'), elPause = $('pause'), elRes = $('results'), elHud = $('hud');
+  var lastStreakShown = 0;
+  var toastBox = $('toast');
+
+  function show(screen){
+    elMenu.classList.toggle('hidden', screen !== 'menu');
+    elPause.classList.toggle('hidden', screen !== 'pause');
+    elRes.classList.toggle('hidden', screen !== 'results');
+  }
+  function showHud(){ elHud.classList.remove('hidden'); }
+  function hideHud(){ elHud.classList.add('hidden'); }
+
+  function toast(msg, gold){
+    var d = document.createElement('div');
+    d.className = 't' + (gold ? ' gold' : '');
+    d.textContent = msg;
+    toastBox.appendChild(d);
+    setTimeout(function(){ d.style.transition = 'opacity .4s'; d.style.opacity = '0';
+      setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 420); }, 1500);
+    while(toastBox.children.length > 3) toastBox.removeChild(toastBox.firstChild);
+  }
+
+  function syncHud(){
+    var st = Game.stats();
+    var left = Math.max(0, Game.endAt - Game.time);
+    var tEl = $('hTimer');
+    tEl.querySelector('.v').textContent = fmt1(left);
+    tEl.classList.toggle('low', left <= 10);
+    $('hCasts').textContent = st.casts;
+    $('hHits').textContent = st.hits;
+    $('hAcc').textContent = st.casts ? fmtPct(st.acc) : '—';
+    var sEl = $('hStreak');
+    sEl.textContent = st.streak;
+    sEl.classList.toggle('hot', st.streak >= CONFIG.score.multStep);
+    $('hMiss').textContent = Game.missN ? Math.round(st.avgMiss) + ' px' : '—';
+    $('hKills').textContent = Game.kills;
+    $('hScore').textContent = Game.score;
+  }
+  function flashStreak(n){
+    var sEl = $('hStreak');
+    sEl.classList.toggle('hot', n >= CONFIG.score.multStep);
+  }
+
+  // ── Меню: карточки сложности, статы, хитмап ──
+  function buildDifficultyButtons(onPick){
+    var box = $('diffBox');
+    box.innerHTML = '';
+    for(var i=1;i<=4;i++){
+      (function(id){
+        var d = DIFFICULTIES[id];
+        var b = document.createElement('button');
+        b.className = 'diff';
+        b.type = 'button';
+        b.innerHTML = '<span class="num">' + id + '</span><span class="dn" style="color:' + d.color + '">' + d.name +
+                      '</span><span class="dd">' + d.desc + '</span>';
+        b.addEventListener('click', function(){ SFX.unlock(); SFX.ui(); onPick(id); });
+        box.appendChild(b);
+      })(i);
+    }
+    markDifficulty(Save.data.set.diff);
+  }
+  function markDifficulty(id){
+    var kids = $('diffBox').children;
+    for(var i=0;i<kids.length;i++) kids[i].classList.toggle('sel', (i+1) === id);
+    var d = DIFFICULTIES[id];
+    $('diffHint').textContent = 'Целей на карте: ' + d.count +
+      ' · скорость ' + Math.round(d.speed) + ' px/с' +
+      ' · радиус удара ' + Math.round(CONFIG.strike.radius * d.radiusMul) + ' px' +
+      (d.blink ? ' · БЛИНКИ ВКЛ' : '') + (d.stutter ? ' · STUTTER-STEP' : '') +
+      (d.fog > 0 ? ' · туман войны' : '');
+  }
+  function buildDurationSelect(){
+    var sel = $('durSel');
+    sel.innerHTML = '';
+    for(var i=0;i<CONFIG.roundOptions.length;i++){
+      var o = document.createElement('option');
+      o.value = CONFIG.roundOptions[i];
+      o.textContent = CONFIG.roundOptions[i] + ' секунд';
+      sel.appendChild(o);
+    }
+    sel.value = Save.data.set.dur;
+  }
+
+  function renderMenuStats(){
+    var d = Save.data;
+    var acc = d.casts ? d.hits/d.casts : 0;
+    $('menuStats').innerHTML =
+      box('лучшая точность', fmtPct(d.bestAcc)) +
+      box('точность за всё время', d.casts ? fmtPct(acc) : '—') +
+      box('всего кастов', d.casts) +
+      box('всего киллов', d.kills) +
+      box('лучший стрик', d.bestStreak) +
+      box('рекорд очков', d.bestScore) +
+      box('раундов', d.rounds) +
+      box('выстрелов в хитмапе', d.shots.length);
+    var need = Save.xpForLevel(d.level), pct = clamp(d.xp / need, 0, 1);
+    $('lvlNum').textContent = d.level;
+    $('lvlBar').style.width = (pct*100).toFixed(1) + '%';
+    $('lvlTxt').textContent = d.xp + ' / ' + need + ' XP до уровня ' + (d.level+1);
+    $('menuVerdict').innerHTML = heatVerdictHTML(d.shots);
+  }
+  function box(k,v){ return '<div class="box"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+
+  // ── Итоги раунда ──
+  function showResults(res){
+    var st = Game.stats();
+    $('rTitle').textContent = 'Итоги раунда';
+    $('rSub').innerHTML = 'Сложность <b style="color:' + Game.diff.color + '">' + Game.diff.name +
+      '</b> · ' + Game.dur + ' с · задержка урона ' + fmt2(Game.delay) + ' с · радиус ' +
+      Math.round(CONFIG.strike.radius * Game.diff.radiusMul) + ' px';
+    $('rGrid').innerHTML =
+      box('точность', (st.casts ? fmtPct(st.acc) : '—') + (res.newAcc ? ' <small>рекорд!</small>' : '')) +
+      box('киллы', st.kills) +
+      box('касты', st.casts) +
+      box('попадания', st.hits) +
+      box('лучший стрик', st.best) +
+      box('средний промах', Game.missN ? Math.round(st.avgMiss) + ' <small>px</small>' : '—') +
+      box('средняя ошибка', Game.allDistN ? Math.round(st.avgDist) + ' <small>px</small>' : '—') +
+      box('снос по курсу', st.movedN ? (st.meanAlong >= 0 ? '+' : '−') + Math.round(Math.abs(st.meanAlong)) +
+          ' <small>px ' + (st.meanAlong >= 0 ? 'перелёт' : 'отставание') + '</small>' : '—') +
+      box('боковой снос', st.movedN ? (st.meanPerp >= 0 ? '+' : '−') + Math.round(Math.abs(st.meanPerp)) + ' <small>px</small>' : '—') +
+      box('ошибка по времени', Game.timeErrN ? Math.round(st.avgTimeErr*1000) + ' <small>мс</small>' : '—') +
+      box('очки', st.score + (res.newScore ? ' <small>рекорд!</small>' : '')) +
+      box('множитель на конце', '×' + fmt1(st.mult));
+    var d = Save.data, need = Save.xpForLevel(d.level);
+    $('rLvl').textContent = d.level;
+    $('rXpGain').textContent = res.xpGain;
+    $('rLvlBar').style.width = (clamp(d.xp/need,0,1)*100).toFixed(1) + '%';
+    $('rLvlTxt').innerHTML = d.xp + ' / ' + need + ' XP до уровня ' + (d.level+1) +
+      (res.ups > 0 ? ' · <b style="color:var(--toxic)">НОВЫЙ УРОВЕНЬ ×' + res.ups + '</b>' : '');
+    $('rRecords').innerHTML = 'Рекорды: точность <b>' + fmtPct(d.bestAcc) + '</b> · очки <b>' + d.bestScore +
+      '</b> · стрик <b>' + d.bestStreak + '</b> · всего киллов <b>' + d.kills + '</b> из <b>' + d.casts + '</b> кастов';
+    $('rVerdict').innerHTML = heatVerdictHTML(d.shots);
+    show('results');
+    // графики рисуем после показа, когда у канвасов есть размеры
+    drawErrGraph($('rGraph'));
+    drawHeatmap($('rMap'));
+    hideHud();
+  }
+
+  function showMenu(){
+    show('menu');
+    hideHud();
+    renderMenuStats();
+    drawHeatmap($('menuMap'));
+    markDifficulty(Save.data.set.diff);
+  }
+  function showPause(){ show('pause'); }
+
+  return { show:show, showHud:showHud, hideHud:hideHud, syncHud:syncHud, toast:toast,
+           buildDifficultyButtons:buildDifficultyButtons, markDifficulty:markDifficulty,
+           buildDurationSelect:buildDurationSelect, renderMenuStats:renderMenuStats,
+           showResults:showResults, showMenu:showMenu, showPause:showPause, flashStreak:flashStreak };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  11. Аналитика: хитмап смещений и график ошибок по времени
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Текстовый вывод: перелёт/недолёт/боковой снос
+function heatVerdictHTML(shots){
+  var n = shots.length;
+  if(n < 5) return 'Данных мало (' + n + ' выстрел' + plur(n, '', 'а', 'ов') + '). Сделай раунд — и я скажу, куда тебя системно тянет.';
+  var sa = 0, sp = 0, hits = 0, sa2 = 0;
+  for(var i=0;i<n;i++){
+    var s = shots[i];
+    sa += s.a; sp += s.p; if(s.h) hits++;
+    sa2 += s.a*s.a;
+  }
+  var meanA = sa/n/S, meanP = sp/n/S;                       // переводим в дизайн-px
+  var sd = Math.sqrt(Math.max(0, sa2/n - (sa/n)*(sa/n)))/S; // разброс по курсу
+  var acc = hits/n;
+  var R = CONFIG.strike.radius;
+  var sec = Math.abs(meanA) / Math.max(30, DIFFICULTIES[Save.data.set.diff].speed);
+  var out = 'Выстрелов в истории: <b>' + n + '</b>, из них попаданий <b>' + fmtPct(acc) + '</b>. ';
+  out += 'Средний снос по курсу: <b>' + (meanA >= 0 ? '+' : '−') + Math.round(Math.abs(meanA)) + ' px</b> ';
+  out += '(' + (meanA >= 0 ? 'перелёт' : 'отставание') + '), боковой: <b>' +
+         (meanP >= 0 ? '+' : '−') + Math.round(Math.abs(meanP)) + ' px</b>, разброс ±' + Math.round(sd) + ' px. ';
+  if(Math.abs(meanA) < R*0.12){
+    out += 'Упреждение в среднем верное — ошибки случайные, тренируй <b>точность</b> и работу по Juke.';
+  } else if(meanA > 0){
+    out += 'Вывод: ты <b>ПЕРЕупреждаешь</b> — бьёшь дальше, чем цель успевает дойти. Убавляй упреждение примерно на <b>' +
+           Math.round(meanA) + ' px</b> (≈ ' + fmt2(sec) + ' с) от текущего.';
+  } else {
+    out += 'Вывод: ты <b>НЕДОупреждаешь</b> — ставишь ульту в хвост цели. Добавляй примерно <b>' +
+           Math.round(-meanA) + ' px</b> (≈ ' + fmt2(sec) + ' с) к упреждению.';
+  }
+  if(Math.abs(meanP) > R*0.16){
+    out += ' Заметный <b>боковой снос ' + (meanP>0?'в одну':'в другую') + ' сторону</b> — целься строго вдоль курса цели.';
+  }
+  return out;
+}
+function plur(n, one, few, many){
+  var m = n % 100, k = n % 10;
+  if(m > 10 && m < 20) return many;
+  if(k === 1) return one;
+  if(k >= 2 && k <= 4) return few;
+  return many;
+}
+
+// Сетап канваса под CSS-размеры с учётом dpr
+function setupChartCanvas(cv, cssH){
+  var cw = Math.max(120, cv.clientWidth || cv.parentNode.clientWidth - 12 || 320);
+  var cdp = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.floor(cw * cdp);
+  cv.height = Math.floor(cssH * cdp);
+  var c = cv.getContext('2d');
+  c.setTransform(cdp, 0, 0, cdp, 0, 0);
+  c.clearRect(0, 0, cw, cssH);
+  return { ctx:c, w:cw, h:cssH };
+}
+
+// Хитмап: облако смещений (along=по курсу, perp=бок) за всю историю
+function drawHeatmap(cv){
+  var cw = Math.max(140, cv.clientWidth || 320);
+  var ch = parseInt(cv.style.height, 10) || 190;
+  var o = setupChartCanvas(cv, ch), c = o.ctx, w = o.w, h = o.h;
+  var cx = w/2, cy = h/2;
+  var span = CONFIG.heatmap.scalePx * S;             // ошибка, которая ложится в край графика
+  var ppu = (Math.min(w, h*1.55)/2) / span;          // пикселей графика на пиксель ошибки
+  var shots = Save.data.shots;
+
+  // фон
+  c.fillStyle = 'rgba(10,14,11,0.9)';
+  c.fillRect(0,0,w,h);
+  // сетка
+  c.strokeStyle = 'rgba(255,255,255,0.06)';
+  c.lineWidth = 1;
+  for(var gx = -3; gx <= 3; gx++){
+    var px = cx + gx*(span*ppu)/3;
+    c.beginPath(); c.moveTo(px, 0); c.lineTo(px, h); c.stroke();
+  }
+  for(var gy = -2; gy <= 2; gy++){
+    var py = cy + gy*(span*ppu)/3;
+    if(py > 0 && py < h){ c.beginPath(); c.moveTo(0, py); c.lineTo(w, py); c.stroke(); }
+  }
+  // зона попадания (радиус удара)
+  var Rr = CONFIG.strike.radius * S * ppu;
+  c.beginPath(); c.arc(cx, cy, Rr, 0, TAU);
+  c.fillStyle = 'rgba(127,195,90,0.07)'; c.fill();
+  c.strokeStyle = 'rgba(99,215,255,0.5)'; c.lineWidth = 1.2; c.setLineDash([4,4]); c.stroke(); c.setLineDash([]);
+  // оси
+  c.strokeStyle = 'rgba(255,194,71,0.35)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0, cy); c.lineTo(w, cy); c.moveTo(cx, 0); c.lineTo(cx, h); c.stroke();
+
+  // точки: сначала промахи, потом попадания — чтобы хиты были сверху
+  for(var k=0;k<2;k++){
+    for(var i=0;i<shots.length;i++){
+      var s = shots[i], isHit = !!s.h;
+      if((k === 0 && isHit) || (k === 1 && !isHit)) continue;
+      var x = cx + s.a * ppu;
+      var y = cy + s.p * ppu;
+      if(x < -20 || x > w+20 || y < -20 || y > h+20) continue;
+      c.beginPath();
+      if(isHit){
+        c.arc(x, y, 2.1, 0, TAU);
+        c.fillStyle = 'rgba(127,195,90,0.5)';
+      } else {
+        c.arc(x, y, 2.4, 0, TAU);
+        c.fillStyle = 'rgba(226,80,58,0.55)';
+      }
+      c.fill();
+    }
+  }
+  // центроид (жёлтый крест) — систематический снос
+  if(shots.length >= 3){
+    var sa = 0, sp = 0;
+    for(var j=0;j<shots.length;j++){ sa += shots[j].a; sp += shots[j].p; }
+    var mx = cx + (sa/shots.length)*ppu, my = cy + (sp/shots.length)*ppu;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(mx, my);
+    c.strokeStyle = 'rgba(255,194,71,0.75)'; c.lineWidth = 1.6; c.stroke();
+    c.beginPath(); c.arc(mx, my, 5, 0, TAU);
+    c.strokeStyle = '#ffc247'; c.lineWidth = 2; c.stroke();
+  }
+  // подписи осей
+  c.font = '10px system-ui, sans-serif';
+  c.fillStyle = 'rgba(156,150,131,0.9)';
+  c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('← ОТСТАВАНИЕ (недоупредил)', 6, 6);
+  c.textAlign = 'right';
+  c.fillText('ПЕРЕЛЁТ (переупредил) →', w-6, 6);
+  c.textAlign = 'left'; c.textBaseline = 'bottom';
+  c.fillText('±' + Math.round(span/S) + ' px', 6, h-5);
+  c.textAlign = 'right';
+  c.fillText('выстрелов: ' + Save.data.shots.length, w-6, h-5);
+  if(shots.length === 0){
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(156,150,131,0.9)';
+    c.font = '12px system-ui, sans-serif';
+    c.fillText('Пока пусто — сделай пару кастов', cx, cy + Rr + 18);
+  }
+}
+
+// График ошибки по времени раунда
+function drawErrGraph(cv){
+  var cw = Math.max(140, cv.clientWidth || 320);
+  var ch = parseInt(cv.style.height, 10) || 150;
+  var o = setupChartCanvas(cv, ch), c = o.ctx, w = o.w, h = o.h;
+  var padL = 34, padR = 8, padT = 10, padB = 18;
+  var plotW = w - padL - padR, plotH = h - padT - padB;
+  var recs = Game.records;
+  c.fillStyle = 'rgba(10,14,11,0.9)';
+  c.fillRect(0,0,w,h);
+
+  // масштаб по Y (в «дизайн-px» ошибки)
+  var maxErr = CONFIG.strike.radius * 1.6;
+  for(var i=0;i<recs.length;i++) if(recs[i].dist >= 0) maxErr = Math.max(maxErr, recs[i].dist / S * 1.12);
+  var dur = Math.max(1, Game.dur);
+  function X(t){ return padL + clamp(t/dur, 0, 1) * plotW; }
+  function Y(e){ return padT + plotH - clamp(e/maxErr, 0, 1) * plotH; }
+
+  // сетка
+  c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 1;
+  c.font = '9px system-ui, sans-serif'; c.fillStyle = 'rgba(156,150,131,0.9)';
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  for(var g=0; g<=3; g++){
+    var val = maxErr * g/3, y = Y(val);
+    c.beginPath(); c.moveTo(padL, y); c.lineTo(w-padR, y); c.stroke();
+    c.fillText(Math.round(val), padL - 5, y);
+  }
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  var ticks = dur <= 40 ? 5 : 4;
+  for(var tk=0; tk<=ticks; tk++){
+    var t = dur * tk/ticks, x = X(t);
+    c.beginPath(); c.moveTo(x, padT + plotH); c.lineTo(x, padT + plotH + 3); c.stroke();
+    c.fillText(Math.round(t) + 'с', x, padT + plotH + 4);
+  }
+  // линия радиуса поражения
+  var yr = Y(CONFIG.strike.radius * S / S);
+  c.setLineDash([4,4]);
+  c.beginPath(); c.moveTo(padL, yr); c.lineTo(w-padR, yr);
+  c.strokeStyle = 'rgba(99,215,255,0.55)'; c.lineWidth = 1.2; c.stroke();
+  c.setLineDash([]);
+  c.fillStyle = 'rgba(99,215,255,0.75)';
+  c.textAlign = 'left'; c.textBaseline = 'bottom';
+  c.fillText('радиус', padL + 3, yr - 2);
+
+  // точки и линия ошибки
+  var prev = null, sum = 0, cnt = 0;
+  c.lineWidth = 1.4;
+  c.beginPath();
+  var started = false;
+  for(var p=0;p<recs.length;p++){
+    var r = recs[p];
+    if(r.dist < 0) continue;
+    var xx = X(r.t), yy = Y(r.dist / S);
+    if(!started){ c.moveTo(xx, yy); started = true; } else c.lineTo(xx, yy);
+    sum += r.dist / S; cnt++;
+  }
+  c.strokeStyle = 'rgba(255,194,71,0.45)'; c.stroke();
+  // средняя ошибка
+  if(cnt > 0){
+    var ym = Y(sum/cnt);
+    c.beginPath(); c.moveTo(padL, ym); c.lineTo(w-padR, ym);
+    c.strokeStyle = 'rgba(255,194,71,0.85)'; c.lineWidth = 1.4; c.setLineDash([7,5]); c.stroke(); c.setLineDash([]);
+  }
+  // сами выстрелы
+  for(var q=0;q<recs.length;q++){
+    var r2 = recs[q];
+    if(r2.dist < 0) continue;
+    var x2 = X(r2.t), y2 = Y(r2.dist / S);
+    c.beginPath(); c.arc(x2, y2, r2.hit ? 3 : 3.4, 0, TAU);
+    c.fillStyle = r2.hit ? '#7fc35a' : '#e2503a'; c.fill();
+    c.lineWidth = 1; c.strokeStyle = 'rgba(0,0,0,0.6)'; c.stroke();
+  }
+  if(cnt === 0){
+    c.fillStyle = 'rgba(156,150,131,0.9)';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = '12px system-ui, sans-serif';
+    c.fillText('Нет кастов', padL + plotW/2, padT + plotH/2);
+  }
+  c.fillStyle = 'rgba(156,150,131,0.85)';
+  c.font = '9px system-ui, sans-serif';
+  c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('ошибка, px', 4, 2);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  12. Режим «фона» в меню: цели просто ходят, чтобы картинка жила
+// ══════════════════════════════════════════════════════════════════════════════
+function startAmbient(){
+  Game.state = 'menu';
+  Game.diff = DIFFICULTIES[Save.data.set.diff];
+  Game.delay = Save.data.set.delay;
+  Game.reset();
+  Game.countdownT = 0;
+  for(var i=0;i<Game.diff.count;i++){
+    var u = Game.spawnOne(Game.spawnType(i));
+    u.dist = rand(u.lane.len*0.1, u.lane.len*0.9);
+    pathAtOut(u);
+  }
+}
+function ambientUpdate(dt){
+  for(var i=0;i<Game.units.length;i++) Game.units[i].update(dt, nowT);
+  if(Game.units.length < Game.diff.count && Math.random() < dt*0.8) Game.spawnOne();
+  FX.update(dt);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  13. Управление: мышь, тач, клавиатура
+// ══════════════════════════════════════════════════════════════════════════════
+function localPos(e){
+  var r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+var activePointer = null;   // id активного пальца (мультитач не должен плодить касты)
+canvas.addEventListener('pointerdown', function(e){
+  SFX.unlock();
+  var p = localPos(e);
+  var ptr = Game.pointer;
+  if(e.pointerType !== 'mouse'){
+    if(activePointer !== null) return;   // второй палец — игнорируем
+    activePointer = e.pointerId;
+  }
+  ptr.x = p.x; ptr.y = p.y; ptr.inside = true;
+  ptr.touch = (e.pointerType === 'touch' || e.pointerType === 'pen');
+  ptr.touchUntil = nowT + (ptr.touch ? 0.55 : 0.0);
+  if(Game.state !== 'playing') return;
+  if(e.pointerType === 'mouse' && e.button === 2) return;   // ПКМ = пауза (см. contextmenu)
+  if(e.pointerType !== 'mouse' && e.cancelable) e.preventDefault();
+  Game.cast(p.x, p.y);
+}, { passive:false });
+
+canvas.addEventListener('pointermove', function(e){
+  var p = localPos(e);
+  var ptr = Game.pointer;
+  ptr.x = p.x; ptr.y = p.y;
+  ptr.touch = (e.pointerType === 'touch' || e.pointerType === 'pen');
+  ptr.inside = true;
+}, { passive:true });
+
+canvas.addEventListener('pointerup', function(e){
+  if(e.pointerId === activePointer) activePointer = null;
+});
+canvas.addEventListener('pointercancel', function(e){
+  if(e.pointerId === activePointer) activePointer = null;
+});
+canvas.addEventListener('pointerleave', function(){
+  if(!Game.pointer.touch) Game.pointer.inside = false;
+});
+
+canvas.addEventListener('contextmenu', function(e){
+  e.preventDefault();
+  togglePause();
+});
+
+window.addEventListener('keydown', function(e){
+  if(e.repeat) return;
+  var k = e.key;
+  var tag = (e.target && e.target.tagName) || '';
+  if(tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'){
+    // не мешаем крутить слайдер и выбирать длительность раунда
+    if(k !== 'Escape') return;
+  }
+  // кнопка в фокусе: Space/Enter обрабатывает сама кнопка — иначе будет двойное действие
+  if(tag === 'BUTTON' && (k === ' ' || k === 'Enter' || e.code === 'Space')) return;
+  if(k === ' ' || k === 'Spacebar' || e.code === 'Space'){ e.preventDefault(); togglePause(); }
+  else if(k === 'r' || k === 'R' || k === 'к' || k === 'К'){ e.preventDefault(); restartRound(); }
+  else if(k === 'Escape'){ togglePause(); }
+  else if(k === 'm' || k === 'M' || k === 'ь' || k === 'Ь'){ toggleMute(); }
+  else if(k >= '1' && k <= '4'){ pickDifficulty(parseInt(k, 10)); }
+});
+
+function togglePause(){
+  if(Game.state === 'playing'){
+    Game.state = 'paused';
+    UI.showPause();
+  } else if(Game.state === 'paused'){
+    Game.state = 'playing';
+    UI.show('game');
+  }
+}
+function restartRound(){
+  SFX.unlock();
+  Game.start(Prefs().diff, Prefs().dur, Prefs().delay);
+  UI.show('game');
+}
+function toMenu(){
+  startAmbient();
+  UI.showMenu();
+}
+function toggleMute(){
+  var m = !Save.data.set.mute;
+  Save.data.set.mute = m;
+  SFX.setEnabled(!m);
+  Save.save();
+  $('bMute').textContent = m ? '🔇' : '🔊';
+  UI.toast(m ? 'Звук выключен' : 'Звук включён');
+  if(!m){ SFX.unlock(); SFX.ui(); }
+}
+function pickDifficulty(id){
+  if(!DIFFICULTIES[id]) return;
+  Save.data.set.diff = id;
+  Save.save();
+  UI.markDifficulty(id);
+  if(Game.state === 'playing' || Game.state === 'paused'){
+    Game.diff = DIFFICULTIES[id];
+    restartRound();
+    UI.toast('Сложность: ' + DIFFICULTIES[id].name + ' — раунд перезапущен', true);
+  } else if(Game.state === 'menu'){
+    startAmbient();
+    UI.toast('Сложность: ' + DIFFICULTIES[id].name);
+  } else {
+    UI.toast('Сложность: ' + DIFFICULTIES[id].name + ' — применится в следующем раунде');
+  }
+}
+function Prefs(){ return Save.data.set; }
+
+// ── Кнопки меню/экранов ──
+UI.buildDifficultyButtons(pickDifficulty);
+UI.buildDurationSelect();
+(function wire(){
+  $('bStart').addEventListener('click', function(){ SFX.unlock(); SFX.ui(); restartRound(); });
+  $('bResume').addEventListener('click', function(){ SFX.ui(); togglePause(); });
+  $('bRestart2').addEventListener('click', function(){ SFX.ui(); restartRound(); });
+  $('bAgain').addEventListener('click', function(){ SFX.ui(); restartRound(); });
+  $('bMenu2').addEventListener('click', function(){ SFX.ui(); toMenu(); });
+  $('bMenu3').addEventListener('click', function(){ SFX.ui(); toMenu(); });
+  $('bPause').addEventListener('click', function(){ SFX.ui(); togglePause(); });
+  $('pause').addEventListener('click', function(e){ if(e.target === this){ SFX.ui(); togglePause(); } });
+  $('bMute').addEventListener('click', function(){ toggleMute(); });
+  $('bReset').addEventListener('click', function(){
+    var b = $('bReset');
+    if(b.dataset.armed === '1'){
+      Save.reset();
+      b.dataset.armed = '0';
+      b.textContent = 'Сбросить прогресс';
+      b.classList.remove('warn');
+      UI.toast('Прогресс сброшен');
+      UI.renderMenuStats();
+      drawHeatmap($('menuMap'));
+    } else {
+      b.dataset.armed = '1';
+      b.textContent = 'Точно? Нажми ещё раз';
+      b.classList.add('warn');
+      setTimeout(function(){ if(b.dataset.armed === '1'){ b.dataset.armed = '0'; b.textContent = 'Сбросить прогресс'; b.classList.remove('warn'); } }, 4000);
+    }
+  });
+  $('durSel').addEventListener('change', function(){
+    Save.data.set.dur = parseInt(this.value, 10);
+    Save.save();
+    SFX.ui();
+  });
+  var dr = $('delayRange');
+  dr.addEventListener('input', function(){
+    var v = clamp(parseFloat(this.value), CONFIG.strike.delayMin, CONFIG.strike.delayMax);
+    Save.data.set.delay = v;
+    Game.delay = v;
+    $('delayVal').textContent = fmt2(v) + ' с';
+    if(Game.state === 'playing'){ Game.diff = DIFFICULTIES[Save.data.set.diff]; }
+  });
+  dr.addEventListener('change', function(){ Save.save(); });
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  14. Главный цикл (requestAnimationFrame + дельта-тайминг) и загрузка
+// ══════════════════════════════════════════════════════════════════════════════
+var nowT = 0;          // общее время анимаций (идёт всегда)
+var lastTs = 0;
+var fpsWin = 0, fpsFrames = 0, degraded = 0;
+
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!lastTs){ lastTs = ts; }
+  var dt = (ts - lastTs) / 1000;
+  lastTs = ts;
+  if(!(dt > 0)) dt = 0;
+  if(dt > 0.05) dt = 0.05;          // защита от «скачков» после сворачивания вкладки
+  nowT += dt;
+
+  // Авто-деградация качества, если железо не тянет 60 FPS.
+  // Ступень 1: dpr=1, без подписей и длинных следов, меньше частиц.
+  // Ступень 2: совсем лёгкий режим (мало частиц, без затемнения столба).
+  fpsWin += dt; fpsFrames++;
+  if(fpsWin >= 1.8){
+    var fps = fpsFrames / fpsWin;
+    if(degraded < 1 && fps < 48){
+      degraded = 1;
+      CONFIG.fx.dprMax = 1;
+      CONFIG.fx.unitLabels = false;
+      CONFIG.fx.maxParticles = 130;
+      CONFIG.fx.trailLen = 5;
+      resize();
+      UI.toast('Автокачество: облегчённая графика (FPS был низкий)');
+    } else if(degraded === 1 && fps < 42){
+      degraded = 2;
+      CONFIG.fx.maxParticles = 70;
+      CONFIG.fx.trailLen = 0;
+      CONFIG.strike.beamDarken = 0;
+      UI.toast('Автокачество: минимальная графика');
+    }
+    fpsWin = 0; fpsFrames = 0;
+  }
+
+  // таймаут «пальца» на тач-экране
+  if(Game.pointer.touch && nowT > Game.pointer.touchUntil) Game.pointer.inside = false;
+
+  if(Game.state === 'playing') Game.update(dt);
+  else if(Game.state === 'menu') ambientUpdate(dt);
+  else if(Game.state === 'results') FX.update(dt);   // взрывы догорают за экраном итогов
+
+  draw(nowT);
+}
+
+// ── Ресайз с задержкой, чтобы не дёргать пересчёт канваса каждый пиксель ──
+var resizeTimer = 0;
+function onResize(){
+  if(resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function(){ resizeTimer = 0; resize(); }, 120);
+}
+window.addEventListener('beforeunload', function(){ Save.save(); });
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', onResize);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+
+// ── Загрузка ──
+Save.load();
+SFX.setEnabled(!Save.data.set.mute);
+$('bMute').textContent = Save.data.set.mute ? '🔇' : '🔊';
+(function initUi(){
+  $('delayRange').value = Save.data.set.delay;
+  $('delayVal').textContent = fmt2(Save.data.set.delay) + ' с';
+  $('durSel').value = Save.data.set.dur;
+  if(!Save.isOk()) $('saveWarn').textContent = 'localStorage недоступен — прогресс не сохраняется';
+})();
+resize();
+startAmbient();
+UI.showMenu();
+requestAnimationFrame(loop);
+
+// Небольшой отладочный доступ из консоли для тюнинга на лету, например:
+//   SunStrike.CONFIG.strike.delayDefault = 2.0
+//   SunStrike.DIFFICULTIES[4].speed = 150
+//   SunStrike.Game.cast(400, 300)
+window.SunStrike = {
+  CONFIG: CONFIG, DIFFICULTIES: DIFFICULTIES, Game: Game, Save: Save, S: function(){ return S; },
+  Field: function(){ return Field; }, Lanes: function(){ return Lanes; },
+  resize: resize, drawHeatmap: drawHeatmap, drawErrGraph: drawErrGraph
+};
+
+})();   // конец IIFE
+</script>
+</body>
+</html>
