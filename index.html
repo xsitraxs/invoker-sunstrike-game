@@ -126,8 +126,10 @@ h2.sec{
   position:absolute; top:5px; right:7px; font-size:9px; color:var(--gold-dim);
   border:1px solid rgba(255,194,71,.3); border-radius:4px; padding:0 3px;
 }
-.ults{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
-@media (max-width:520px){ .ults{grid-template-columns:repeat(2,1fr)} }
+.ults{display:grid; grid-template-columns:repeat(5,1fr); gap:7px}
+.ults.two{grid-template-columns:repeat(2,1fr)}
+@media (max-width:700px){ .ults{grid-template-columns:repeat(3,1fr)} }
+@media (max-width:520px){ .ults{grid-template-columns:repeat(2,1fr)} .ults.two{grid-template-columns:1fr} }
 .ult{
   text-align:left; padding:7px 9px; border-radius:9px; cursor:pointer; font-family:var(--font);
   background:linear-gradient(180deg, rgba(58,42,22,.6), rgba(24,18,12,.7));
@@ -246,20 +248,28 @@ kbd{
     <div class="diffs" id="diffBox"></div>
     <p class="tiny" id="diffHint" style="margin-top:7px"></p>
 
-    <h2 class="sec">Sun Strike — уровень ульта (радиус и урон как в доте)</h2>
+    <h2 class="sec">Профиль каста</h2>
+    <div class="ults two" id="profBox"></div>
+
+    <h2 class="sec">Sun Strike — уровень Exort (урон; радиус в доте всегда 175)</h2>
     <div class="ults" id="ultBox"></div>
     <div class="row" style="margin-top:7px">
-      <label class="chip toggle" title="Радиус 425 единиц — как с Агани́мом">
-        <input type="checkbox" id="cbAghanim"> Агани́м (радиус 425 ед.)
+      <label class="chip toggle" title="Aghanim's Scepter: двойной каст или клавиша C — Cataclysm (2 страйка по 75% вокруг каждого врага-героя, КД 90 с)">
+        <input type="checkbox" id="cbScepter"> Aghanim's Scepter → <b>Cataclysm</b> (C)
       </label>
+      <label class="chip toggle" title="Aghanim's Shard: попадание по врагу-герою призывает Forge Spirit">
+        <input type="checkbox" id="cbShard"> Aghanim's Shard → Forge Spirit
+      </label>
+      <label class="chip toggle" title="Талант 10 уровня: −4 с к кулдауну Sun Strike">
+        <input type="checkbox" id="cbTalent"> Талант −4 с КД
+      </label>
+    </div>
+    <div class="row" style="margin-top:7px">
       <label class="chip toggle">
         <input type="checkbox" id="cbVoice"> Голос аннонсера
       </label>
       <label class="chip toggle">
         <input type="checkbox" id="cbStings"> Стингеры стриков
-      </label>
-      <label class="chip toggle" title="Выключено: попадание всегда убивает (тренажёр). Включено: HP и урон как в доте">
-        <input type="checkbox" id="cbDotaHp"> Дотерские HP: ульта не добивает с одного удара
       </label>
     </div>
     <p class="tiny" id="ultHint" style="margin-top:6px"></p>
@@ -296,6 +306,7 @@ kbd{
     <ul class="hintlist">
       <li><kbd>ЛКМ</kbd> / <kbd>тап</kbd> — каст Sun Strike в точку под курсором</li>
       <li><kbd>ПКМ</kbd> / <kbd>Space</kbd> — пауза &nbsp;·&nbsp; <kbd>R</kbd> — рестарт раунда &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>4</kbd> — сложность &nbsp;·&nbsp; <kbd>M</kbd> — звук</li>
+      <li><kbd>C</kbd> — <b>Cataclysm</b> (с Aghanim's Scepter): 2 страйка по 75% урона вокруг каждого врага-героя; в доте это двойной тап — здесь он тоже работает.</li>
       <li>Маркер «кипит» ровно <b>задержку урона</b> — бей туда, где цель окажется <b>в момент удара</b>, а не туда, где она есть.</li>
       <li>После каждого каста показывается разбор: <b>куда ты кликнул</b>, <b>где была цель</b> и вектор ошибки (<b>перелёт / отставание</b>).</li>
     </ul>
@@ -397,23 +408,53 @@ var CONFIG = {
     unitPx: 0,                   // px на 1 юнит мира дота, считается от радиуса героя (см. rebuildScales)
     heroRadiusUnits: 24,         // радиус героя в юнитах доты — база для пересчёта размеров
 
-    // ── Sun Strike ──
-    radiusUnits: [175, 200, 225, 250],   // радиус по уровням ульта: Sun Strike 1/2/3/4
-    radiusScepterUnits: 425,             // Aghanim's Scepter: радиус как в доте
-    damage: [200, 250, 300, 350],        // урон по уровням (в доте — чистый урон)
-    scepterDamageBonus: 100,             // Scepter: прибавка к урону (по мотивам патчей)
-    delayBase: 1.7,                      // задержка урона, сек — 1.7 с, как в доте
-    buildingsImmune: true,               // строения не получают урон от Sun Strike (как в доте)
-    friendlyFire: false,                 // союзников не бьёт (как в доте)
-    aoeHullFactor: 0.25,                 // доля радиуса цели, добавляемая к зоне (смягчение проверки)
+    // ── Sun Strike: числа сверены с патчем 7.41f ──
+    // Радиус в доте ФИКСИРОВАННЫЙ (175), а не растёт по уровням; уровень ульта
+    // поднимает только урон, потому что Sun Strike качается уровнем Exort.
+    radiusUnits: 175,                    // Effect Radius = 175 (Liquipedia/dotacoach, 7.41f)
+    exortDamage: [175, 225, 275, 325, 375, 425, 475, 525, 575, 625],
+                                         // Ровно 175 + 50 за каждый уровень Exort:
+                                         // Exort 1..8 → 175..525, с +1 сферой от Скептера (9) → 575.
+                                         // Значения 10-го уровня оставлены про запас (фасетов в 7.41 нет).
+    exortMax: 8,                         // в 7.41 фасеты Инвокера убрали, у сфер максимум 8
+    delayBase: 1.7,                      // Effect Delay = 1.7 с
+    cooldown: 23,                        // Cooldown = 23 с
+    manaCost: 175,                       // Mana Cost = 175
+    talentCdReduction: 4,                // талант 10 уровня: −4 с к КД (если включён)
+    splitDamage: true,                   // урон ДЕЛИТСЯ поровну между всеми, кого накрыло
+    scepterOrbBonus: 1,                  // Скептер в 7.41 даёт +1 уровень выбранной сферы (у нас — Exort)
+    buildingsImmune: true,               // строения не получают урон от Sun Strike
+    friendlyFire: false,                 // союзников не бьёт
+    aoeHullFactor: 0.25,                 // доля радиуса цели, добавляемая к зоне
+
+    // ── Обзор от каста: в доте Sun Strike даёт flying vision в точке удара ──
+    visionRadiusUnits: 400,              // 400 радиуса обзора
+    visionDuration: 5.5,                 // 5.5 секунды
+
+    // ── Aghanim's Scepter: Cataclysm (двойной тап вместо Sun Strike) ──
+    cataclysm: {
+      instances: 2,                      // 2 страйка на каждого врага
+      minDistUnits: 90,                  // ставятся в 90..180 единицах от героя
+      maxDistUnits: 180,
+      dmgFactor: 0.75,                   // 75% урона
+      cooldown: 90,                      // и ульта уходит в КД на 90 с
+      heroOnly: true                     // бьют только по врагам-героям вокруг них
+    },
+
+    // ── Aghanim's Shard: попадание по герою призывает Forge Spirit ──
+    shard: {
+      spiritDuration: 40,                // дух живёт 40 с
+      spiritHp: 300, spiritDmg: 34, spiritRange: 190, spiritSpeed: 130,
+      spiritInterval: 1.0
+    },
 
     // ── Крипы линии (lane creeps) ──
-    creepHp: { melee: 550, ranged: 300 },  // HP как в доте (250? нет: меле 550, рендж 300)
+    creepHp: { melee: 550, ranged: 300 },  // HP как в доте (меле 550, рендж 300)
     creepDmg: { melee: 22, ranged: 26 },   // урон за удар
-    creepAtkInterval: 1.0,                 // интервал атаки, сек
-    creepRange: { melee: 42, ranged: 190 },// дистанция атаки, дизайн-px (сжата под арену)
-    creepAggro: { melee: 165, ranged: 235 },// радиус агрессии, дизайн-px
-    creepSpeed: { melee: 88, ranged: 82 }, // скорость крипов, дизайн-px/сек
+    creepAtkInterval: { melee: 1.0, ranged: 1.0, spirit: 1.0 },   // интервал атаки, сек
+    creepRange: { melee: 42, ranged: 190, spirit: 190 },   // дистанция атаки, дизайн-px
+    creepAggro: { melee: 165, ranged: 235, spirit: 260 },  // радиус агрессии, дизайн-px
+    creepSpeed: { melee: 88, ranged: 82, spirit: 130 },    // скорость, дизайн-px/сек
     creepBounty: 4,                        // XP за добитого крипа
 
     // ── Герои (цели тренировки) ──
@@ -449,15 +490,30 @@ var CONFIG = {
                                  // ульта убивает только добитых крипов и не добивает героев
   },
 
+  // ──────── Профили каста ────────
+  //  trainer — тренажёр: КД короткий, мана не тратится, попадание добивает цель.
+  //            Нужен, чтобы за раунд набить 30+ кастов и реально натренировать упреждение.
+  //  dota    — как в доте: КД 23 с, мана 175 с регеном, урон делится между целями,
+  //            попадание НЕ добивает (герой 900 HP живёт после ульты).
+  profiles: {
+    trainer: { id:'trainer', name:'Тренажёр', cd:0.35, useMana:false, oneShot:true,
+               desc:'Частые касты, попадание добивает цель. Цифры урона и радиус — дотерские.' },
+    dota:    { id:'dota', name:'Как в доте', cd:23, useMana:true, oneShot:false,
+               manaRegen:9,   // реген «с предметами»: 175 маны набирается примерно к откату КД
+               desc:'КД 23 с, мана 175, урон делится между всеми, кого накрыло. Героя с 900 HP ульта не убивает.' }
+  },
+
   // ──────── Sun Strike: тренировочная механика ────────
   strike: {
     delayDefault: 1.7,           // ЗАДЕРЖКА УРОНА, сек (главный параметр тренировки)
     delayMin: 1.0,               // минимум слайдера, сек
     delayMax: 2.5,               // максимум слайдера, сек
-    ultLevelDefault: 3,          // уровень ульта по умолчанию (радиус/урон как в доте)
-    aghanimDefault: false,       // Aghanim's Scepter по умолчанию
+    exortDefault: 4,             // уровень Exort по умолчанию (урон 175 + 50/ур.)
+    profileDefault: 'trainer',   // профиль каста по умолчанию
+    scepterDefault: false,       // Aghanim's Scepter (Cataclysm)
+    shardDefault: false,         // Aghanim's Shard (Forge Spirit)
     castAnim: 0.30,              // длительность визуальной анимации каста, сек
-    castCooldown: 0.35,          // КД между кастами, сек (в тренажёре каст частый)
+    castCooldown: 0.35,          // КД каста в профиле «Тренажёр», сек (в «Как в доте» — 23 с)
     explodeTime: 0.55,           // сколько живёт столб света, сек
     scorchTime: 6.0,             // сколько тлеет выжженная земля после удара, сек
     revealTime: 1.0,             // сколько висит разбор каста (метки + вектор ошибки), сек
@@ -467,9 +523,8 @@ var CONFIG = {
     beamWidthMul: 1.15,          // ширина столба света у земли (в радиусах зоны)
     beamTopMul: 2.1,             // ширина столба у верхней кромки
     beamDarken: 0.5,             // насколько столб затемняет остальной экран
-    manaMax: 400,                // мана для полосы HUD (каст в тренажёре не ограничен)
-    manaCost: 175,               // стоимость Sun Strike в доте
-    manaRegen: 320               // визуальный реген маны, ед/сек
+    manaMax: 400,                // пул маны Инвокера (для полосы HUD)
+    manaRegen: 320               // реген маны в профиле «Тренажёр» (чисто визуальный)
   },
 
   // ──────── Юниты: поведение и размеры ────────
@@ -595,20 +650,20 @@ var CONFIG = {
 // а не размер ульты: радиус/урон Sun Strike честно берутся из уровня ульта (ULVL).
 var DIFFICULTIES = {
   1: { id:1, name:'Разминка', tag:'WARMUP', color:'#7fc35a',
-       desc:'Спокойная линия: крипы идут волнами, героев нет. Ульта 4 уровня — зона как в доте.',
-       heroes:0, heroSpeedMul:0.85, ultLevel:4, juke:0, jukeEvery:[9,9], pauseChance:0, dash:0, blink:false,
+       desc:'Спокойная линия: крипы идут волнами, героев нет. Разминаем упреждение на медленных целях.',
+       heroes:0, heroSpeedMul:0.85, juke:0, jukeEvery:[9,9], pauseChance:0, dash:0, blink:false,
        blinkEvery:[9,9], stutter:false, fog:0, waveMul:1.5, waveMelee:2, waveRanged:1 },
   2: { id:2, name:'Норма', tag:'NORMAL', color:'#ffc247',
-       desc:'Два героя в линиях: джуки, остановки, рывки. Ульта 3 уровня.',
-       heroes:2, heroSpeedMul:1.0, ultLevel:3, juke:0.42, jukeEvery:[1.6,3.0], pauseChance:0.22, dash:0.16,
+       desc:'Два героя в линиях: джуки, остановки, рывки, средняя скорость.',
+       heroes:2, heroSpeedMul:1.0, juke:0.42, jukeEvery:[1.6,3.0], pauseChance:0.22, dash:0.16,
        blink:false, blinkEvery:[9,9], stutter:false, fog:0, waveMul:1.0, waveMelee:3, waveRanged:1 },
   3: { id:3, name:'Хард', tag:'HARD', color:'#ff7a1a',
-       desc:'Быстрые герои, частые смены курса, края карты в тумане войны. Ульта 2 уровня.',
-       heroes:3, heroSpeedMul:1.35, ultLevel:2, juke:0.58, jukeEvery:[1.0,2.1], pauseChance:0.28, dash:0.34,
+       desc:'Быстрые герои, частые смены курса, края карты в тумане войны.',
+       heroes:3, heroSpeedMul:1.35, juke:0.58, jukeEvery:[1.0,2.1], pauseChance:0.28, dash:0.34,
        blink:false, blinkEvery:[9,9], stutter:false, fog:0.62, waveMul:0.85, waveMelee:3, waveRanged:1 },
   4: { id:4, name:'Insane', tag:'INSANE', color:'#e2503a',
-       desc:'Три злых героя: stutter-step, блинки, джуки. Ульта 1 уровня — самая узкая зона.',
-       heroes:3, heroSpeedMul:1.75, ultLevel:1, juke:0.6, jukeEvery:[0.7,1.5], pauseChance:0.22, dash:0.4,
+       desc:'Три злых героя: stutter-step, блинки, джуки. Ульта узкая (175), попасть труднее всего.',
+       heroes:3, heroSpeedMul:1.75, juke:0.6, jukeEvery:[0.7,1.5], pauseChance:0.22, dash:0.4,
        blink:true, blinkEvery:[2.2,4.2], blinkDist:300, stutter:true, fog:0.55, waveMul:0.75,
        waveMelee:3, waveRanged:1 }
 };
@@ -640,16 +695,28 @@ var $ = function(id){ return document.getElementById(id); };
 var Save = (function(){
   var KEY = 'sunstrike_trainer_v1';
   var ok = true;
-  var data = {
-    xp:0, level:1,
-    kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
-    bestAcc:0, bestScore:0, bestStreak:0,
-    shots:[],                                  // {a: along, p: perp, h: 0/1} — для хитмапа
-    set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false,
-          ultLevel:CONFIG.strike.ultLevelDefault, aghanim:CONFIG.strike.aghanimDefault,
-          annVoice:true, annStings:true, dotaHp:!CONFIG.dota.oneShotOnHit }
-  };
+  // Чистые настройки по умолчанию — отдельной функцией: битый сейв грузит их, а не остатки прошлой загрузки
+  function defaults(){
+    return {
+      xp:0, level:1,
+      kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
+      bestAcc:0, bestScore:0, bestStreak:0,
+      shots:[],                                  // {a: along, p: perp, h: 0/1} — для хитмапа
+      set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false,
+            exort:CONFIG.strike.exortDefault, profile:CONFIG.strike.profileDefault,
+            scepter:CONFIG.strike.scepterDefault, shard:CONFIG.strike.shardDefault,
+            talent:false,
+            annVoice:true, annStings:true }
+    };
+  }
+  function resetToDefaults(){                  // чистим тот же объект: ссылка Save.data не должна устаревать
+    var d = defaults(), k;
+    for(k in data) if(Object.prototype.hasOwnProperty.call(data, k)) delete data[k];
+    for(k in d) data[k] = d[k];
+  }
+  var data = defaults();
   function load(){
+    resetToDefaults();
     try{
       var raw = window.localStorage.getItem(KEY);
       if(raw){
@@ -665,11 +732,24 @@ var Save = (function(){
     data.set.diff = DIFFICULTIES[data.set.diff] ? data.set.diff : 2;
     data.set.dur = CONFIG.roundOptions.indexOf(data.set.dur) >= 0 ? data.set.dur : CONFIG.roundDefault;
     data.set.delay = clamp(Number(data.set.delay) || CONFIG.strike.delayDefault, CONFIG.strike.delayMin, CONFIG.strike.delayMax);
-    data.set.ultLevel = clamp(parseInt(data.set.ultLevel, 10) || CONFIG.strike.ultLevelDefault, 1, 4);
-    data.set.aghanim = !!data.set.aghanim;
+    // Миграция со старой схемы («уровень ульта 1-4», радиус по уровням, галочка dotaHp):
+    // переводим её в уровень Exort и профиль каста, чтобы прогресс и настройки не терялись.
+    if(data.set.ultLevel !== undefined && data.set.exort === undefined){
+      data.set.exort = clamp(1 + (parseInt(data.set.ultLevel, 10) || 3) * 2, 1, CONFIG.dota.exortMax);
+    }
+    if(data.set.dotaHp !== undefined && data.set.profile === undefined){
+      data.set.profile = data.set.dotaHp ? 'dota' : 'trainer';
+    }
+    if(data.set.aghanim !== undefined && data.set.scepter === undefined) data.set.scepter = !!data.set.aghanim;
+    delete data.set.ultLevel; delete data.set.dotaHp; delete data.set.aghanim;
+    data.set.profile = CONFIG.profiles[data.set.profile] ? data.set.profile : CONFIG.strike.profileDefault;
+    delete data.set.facet;                                   // фасеты Инвокера убрали в 7.41
+    data.set.exort = clamp(parseInt(data.set.exort, 10) || CONFIG.strike.exortDefault, 1, CONFIG.dota.exortMax);
+    data.set.scepter = !!data.set.scepter;
+    data.set.shard = !!data.set.shard;
+    data.set.talent = !!data.set.talent;
     if(data.set.annVoice === undefined) data.set.annVoice = true;
     if(data.set.annStings === undefined) data.set.annStings = true;
-    if(data.set.dotaHp === undefined) data.set.dotaHp = !CONFIG.dota.oneShotOnHit;
     data.damage = Number(data.damage) || 0;
     data.level = Math.max(1, data.level|0);
     return data;
@@ -952,6 +1032,7 @@ var HUD_H = 92;            // высота панели героя внизу (�
 function rebuildField(){
   var padTop = (CONFIG.field.topOffset) * S;
   HUD_H = clamp(CONFIG.field.bottomOffset * S, 68, 104);
+  if((window.innerWidth || W) < 820) HUD_H = Math.max(HUD_H, 88);   // на телефоне HUD в два этажа
   CONFIG.field.bottomOffset = HUD_H / S;      // в дизайн-px, чтобы rebuildField резервировал ровно HUD_H
   var padBottom = CONFIG.field.bottomOffset * S;
   var padX = CONFIG.field.padX * S;
@@ -1030,8 +1111,9 @@ function Unit(opts){
   this.team = opts.team;
   this.isHero = this.kind === 'hero';
   this.isTower = this.kind === 'tower';
-  this.isCreep = !this.isHero && !this.isTower;
-  this.isRanged = this.kind === 'ranged';
+  this.isCreep = !this.isHero && !this.isTower && this.kind !== 'spirit';
+  this.isSpirit = this.kind === 'spirit';
+  this.isRanged = (this.kind === 'ranged' || this.kind === 'spirit');
   this.laneIdx = opts.laneIdx;
   this.lane = Lanes[this.laneIdx];
   this.diff = opts.diff;
@@ -1042,14 +1124,22 @@ function Unit(opts){
   this.offsetVel = 0;
 
   // размер (дизайн-px → мировые)
-  var baseR = this.isHero ? U.heroR : (this.isTower ? D.towerRadius : (this.isRanged ? U.creepR * 0.92 : U.creepR));
+  var baseR = this.isHero ? U.heroR
+            : (this.isTower ? D.towerRadius
+            : (this.isSpirit ? U.creepR * 1.05 : (this.isRanged ? U.creepR * 0.92 : U.creepR)));
   this.r = baseR * S;
 
   // боёвка
-  this.hpMax = this.isHero ? D.heroHp : (this.isTower ? D.towerHp : D.creepHp[this.kind]);
+  this.hpMax = this.isHero ? D.heroHp
+             : (this.isTower ? D.towerHp
+             : (this.isSpirit ? D.shard.spiritHp : D.creepHp[this.kind]));
   this.hp = this.hpMax;
-  this.dmg = this.isHero ? D.heroDmg : (this.isTower ? D.towerDmg : D.creepDmg[this.kind]);
-  this.atkInt = this.isHero ? D.heroAtkInterval : (this.isTower ? D.towerAtkInterval : D.creepAtkInterval);
+  this.dmg = this.isHero ? D.heroDmg
+          : (this.isTower ? D.towerDmg
+          : (this.isSpirit ? D.shard.spiritDmg : D.creepDmg[this.kind]));
+  this.atkInt = this.isHero ? D.heroAtkInterval
+             : (this.isTower ? D.towerAtkInterval
+             : (this.isSpirit ? D.shard.spiritInterval : D.creepAtkInterval[this.kind]));
   this.range = (this.isHero ? D.heroRange : (this.isTower ? D.towerRange : D.creepRange[this.kind])) * S;
   this.aggro = (this.isHero ? D.heroAggro : (this.isTower ? D.towerRange * 1.08 : D.creepAggro[this.kind])) * S;
   this.atkCd = rand(0, 0.4);
@@ -1061,7 +1151,8 @@ function Unit(opts){
   // движение
   this.speedJit = rand(1 - U.speedJitter, 1 + U.speedJitter);
   var sp = this.isHero ? D.heroSpeed * (this.diff.heroSpeedMul || 1)
-                       : (this.isTower ? 0 : D.creepSpeed[this.kind]);
+         : (this.isTower ? 0
+         : (this.isSpirit ? D.shard.spiritSpeed : D.creepSpeed[this.kind]));
   this.baseSpeed = sp * this.speedJit * S;
   this.speed = this.isTower ? 0 : (this.roam ? this.baseSpeed : this.baseSpeed);
   this.wantSpeed = this.baseSpeed;
@@ -1161,6 +1252,8 @@ Unit.prototype.update = function(dt, time){
   var inRange = target && this.targetDist <= this.range;
   if(inRange && this.atkCd <= 0) this.attack(target);
   this.inCombat = !!inRange;
+  // призванный дух: подходит к цели, пока она не в радиусе, и атакует только врагов
+  if(this.isSpirit && target && !inRange){ this.dist = this.dist; }
 
   // ── желаемая скорость ──
   var want = this.baseSpeed;
@@ -1229,6 +1322,13 @@ Unit.prototype.attack = function(target){
 // Пересчёт размеров и скоростей юнита после смены масштаба (ресайз/поворот)
 function recomputeUnitScale(u){
   var D = CONFIG.dota, U = CONFIG.unit;
+  if(u.isSpirit){
+    u.r = U.creepR * 1.05 * S;
+    u.range = D.shard.spiritRange * S;
+    u.aggro = D.shard.spiritAggro === undefined ? D.creepAggro.spirit * S : D.shard.spiritAggro * S;
+    u.baseSpeed = D.shard.spiritSpeed * S;
+    return;
+  }
   var baseR = u.isHero ? U.heroR : (u.isTower ? D.towerRadius : (u.kind === 'ranged' ? U.creepR*0.92 : U.creepR));
   u.r = baseR * S;
   u.range = (u.isHero ? D.heroRange : (u.isTower ? D.towerRange : D.creepRange[u.kind])) * S;
@@ -1487,6 +1587,12 @@ var Game = {
   annStreak:0, annMulti:0,
   pointer:{x:0,y:0, inside:false, touch:false, touchUntil:0},
   manaLvl:1,
+  profile: CONFIG.profiles.trainer,
+  exort: CONFIG.strike.exortDefault,
+  scepter:false, shard:false,
+  cataclysmCd:-99,          // когда снова доступен Cataclysm
+  vision: [],               // {x,y,r,until} — обзор от кастов (в доте 400 радиуса, 5.5 с)
+  spirits: [],              // призванные Forge Spirit'ы: {unit, until}
   roundId:0
 };
 
@@ -1515,16 +1621,28 @@ Game.reset = function(){
   this.mana = CONFIG.strike.manaMax;
   this.heroRespawns.length = 0;
   this.towerRespawns.length = 0;
+  this.vision.length = 0;
+  this.spirits.length = 0;
+  this.cataclysmCd = -99;
+  this.cataclysmCount = 0;      // сколько раз за раунд применён Cataclysm
+  this.aimCastsN = 0;           // касты, наведённые рукой (без Cataclysm) — по ним считается точность
+  this.aimHitsN = 0;
   Ann.resetStreak(); Ann.resetMulti();
   FX.clear();
 };
 
-Game.start = function(diffId, dur, delay, ultLevel, aghanim){
+Game.start = function(diffId, dur, delay, set){
+  var st = set || Save.data.set;
   this.diff = DIFFICULTIES[diffId] || DIFFICULTIES[2];
   this.dur = dur || CONFIG.roundDefault;
   this.delay = delay || CONFIG.strike.delayDefault;
-  this.ultLevel = clamp(ultLevel || CONFIG.strike.ultLevelDefault, 1, 4);
-  this.aghanim = !!aghanim;
+  // профиль каста: тренажёр (частые касты) или строгий дотерский
+  this.profile = CONFIG.profiles[st.profile] || CONFIG.profiles.trainer;
+  this.exortMax = CONFIG.dota.exortMax;
+  this.exort = clamp(parseInt(st.exort, 10) || CONFIG.strike.exortDefault, 1,
+                     CONFIG.dota.exortMax);
+  this.scepter = !!st.scepter;
+  this.shard = !!st.shard;
   this.roundId++;
   this.reset();
   this.state = 'playing';
@@ -1554,6 +1672,42 @@ Game.spawnTower = function(team, laneIdx){
   pathAtOut(t);
   this.units.push(t);
   return t;
+};
+
+// Forge Spirit (Шард): призванный дух воюет на стороне Света и живёт ограниченное время
+Game.spawnSpirit = function(x, y, laneIdx){
+  var D = CONFIG.dota;
+  // ищем ближайшую линию, чтобы духу было где ходить
+  var bestLane = 0, bestD = 1e9;
+  for(var i=0;i<Lanes.length;i++){
+    var p = pathAt(Lanes[i], clamp(Lanes[i].len * 0.5, 0, Lanes[i].len));
+    var d = len(p.x - x, p.y - y);
+    if(d < bestD){ bestD = d; bestLane = i; }
+  }
+  var li = (laneIdx === undefined || laneIdx === null) ? bestLane : laneIdx;
+  var lane = Lanes[li];
+  var proj = 0, bestPP = 1e9;
+  for(var k=0;k<=40;k++){
+    var dd = lane.len * k / 40, pp = pathAt(lane, dd);
+    var dist = len(pp.x - x, pp.y - y);
+    if(dist < bestPP){ bestPP = dist; proj = dd; }
+  }
+  var sp = new Unit({ kind:'spirit', team:TEAM.RADIANT, laneIdx:li, dist:proj,
+                      dir:1, roam:false, diff:this.diff });
+  sp.offset = 0;
+  sp.baseSpeed = D.shard.spiritSpeed * S;
+  sp.speed = sp.baseSpeed;
+  pathAtOut(sp);
+  sp.spawnT = 0;
+  this.units.push(sp);
+  this.spirits.push({ unit:sp, until:this.time + D.shard.spiritDuration });
+  FX.addRing(sp.pos.x, sp.pos.y, 3*S, 34*S, 0.5, '255,150,220', 2.4);
+  if(this.state === 'playing'){
+    FX.addFloat(sp.pos.x, sp.pos.y - 26*S, 'FORGE SPIRIT', '#ff9ad5', 13*S);
+    Ann.banner('FORGE SPIRIT', 'Шард: дух призван', '#ff9ad5');
+  }
+  SFX.levelUp();
+  return sp;
 };
 
 Game.spawnHero = function(laneIdx){
@@ -1666,21 +1820,44 @@ Game.killUnit = function(u, src, byUlt){
 };
 
 // ── Sun Strike: радиус и урон честно зависят от уровня ульта ──
+// Радиус Sun Strike — всегда 175 единиц доты (не зависит от уровня и Агани́ма)
 Game.effectiveRadius = function(){
-  var D = CONFIG.dota;
-  var units = (this.aghanim ? D.radiusScepterUnits : D.radiusUnits[(this.ultLevel || 1) - 1]);
-  return unitsToPx(units);
+  return unitsToPx(CONFIG.dota.radiusUnits);
 };
+// Урон = Base 175 + 50 за уровень Exort (Агани́м даёт +1 уровень к сферам)
 Game.strikeDamage = function(){
   var D = CONFIG.dota;
-  var base = D.damage[(this.ultLevel || 1) - 1];
-  return base + (this.aghanim ? D.scepterDamageBonus : 0);
+  var lvl = this.exort + (this.scepter ? D.scepterOrbBonus : 0);
+  lvl = clamp(lvl, 1, D.exortDamage.length);
+  return D.exortDamage[lvl - 1];
+};
+Game.exortEffective = function(){
+  var D = CONFIG.dota;
+  return clamp(this.exort + (this.scepter ? D.scepterOrbBonus : 0), 1, D.exortDamage.length);
+};
+// Кулдаун каста: в профиле «Как в доте» — 23 с (талант даёт −4 с)
+Game.castCooldown = function(){
+  var D = CONFIG.dota;
+  if(this.profile.cd <= 1) return this.profile.cd;              // тренажёр: почти без КД
+  return D.cooldown - (Save.data.set.talent ? D.talentCdReduction : 0);
+};
+// Обзор вокруг точки каста (в доте — flying vision 400 на 5.5 с)
+Game.addVision = function(x, y){
+  this.vision.push({ x:x, y:y, r:unitsToPx(CONFIG.dota.visionRadiusUnits), until:this.time + CONFIG.dota.visionDuration });
+  while(this.vision.length > 12) this.vision.shift();
+};
+Game.visionAt = function(x, y){
+  for(var i=0;i<this.vision.length;i++){
+    var v = this.vision[i];
+    if(len(v.x - x, v.y - y) <= v.r) return true;
+  }
+  return false;
 };
 Game.isEnemy = function(u){ return u.team === TEAM.DIRE; };
 Game.damageable = function(u){ return this.isEnemy(u) && !u.isTower; };   // строения неуязвимы к ульте
 
 // ── Каст ──
-var outsideHintAt = -9;
+var outsideHintAt = -9, lastCdHint = -9;
 Game.cast = function(x, y){
   if(this.state !== 'playing' || this.countdownT > 0) return false;
   var m = 12 * S;
@@ -1688,20 +1865,29 @@ Game.cast = function(x, y){
     if(this.time - outsideHintAt > 2.5){ outsideHintAt = this.time; UI.toast('Вне арены — целься по линиям'); }
     return false;
   }
-  var cd = CONFIG.strike.castCooldown;
-  if(this.time - this.lastCast < cd) return false;
+  // Двойной каст с Агани́мом = Cataclysm (в доте — двойной тап по кнопке ульты).
+  // Проверяем ДО кулдауна: у Cataclysm свой КД 90 с, обычный КД каста его не касается.
+  if(this.scepter && this.canCataclysm() && this.lastCastPos && this.time - this.lastCast < 0.45 &&
+     len(this.lastCastPos.x - x, this.lastCastPos.y - y) < unitsToPx(300)){
+    this.lastCast = this.time;
+    return this.cataclysm();
+  }
+  var cd = this.castCooldown();
+  if(this.time - this.lastCast < cd){
+    if(cd > 1 && this.time - lastCdHint > 1.5){ lastCdHint = this.time; UI.toast('Sun Strike ещё на кулдауне: ' + fmt1(cd - (this.time - this.lastCast)) + ' с'); }
+    return false;
+  }
+  if(this.profile.useMana && this.mana < CONFIG.dota.manaCost){
+    if(this.time - lastCdHint > 1.5){ lastCdHint = this.time; UI.toast('Не хватает маны: ' + Math.round(this.mana) + ' / ' + CONFIG.dota.manaCost); }
+    return false;
+  }
   if(this.casts.length >= CONFIG.strike.maxActive) return false;
   this.lastCast = this.time;
-  this.casts.push({
-    x:x, y:y, t:0,
-    at:this.time + this.delay,
-    radius:this.effectiveRadius(),
-    ultLevel:this.ultLevel, aghanim:this.aghanim,
-    resolved:false,
-    snap:this.units.map(function(u){ return { id:u.id, x:u.pos.x, y:u.pos.y }; })
-  });
-  this.castsN++;
-  this.mana = Math.max(0, (this.mana === undefined ? CONFIG.strike.manaMax : this.mana) - CONFIG.strike.manaCost);
+  this.lastCastPos = { x:x, y:y };
+  this.aimCastsN++;
+  this.pushStrike(x, y, 1);
+  if(this.profile.useMana) this.mana = Math.max(0, this.mana - CONFIG.dota.manaCost);
+  this.addVision(x, y);
   SFX.cast();
   UI.castFx();
   FX.addRing(x, y, 2*S, this.effectiveRadius()*1.4, 0.3, '255,200,110', 1.6);
@@ -1710,11 +1896,53 @@ Game.cast = function(x, y){
   return true;
 };
 
+// Положить страйк в очередь (damageFactor = 1 для обычного, 0.75 для Cataclysm)
+Game.pushStrike = function(x, y, dmgFactor, cataclysm){
+  this.casts.push({
+    x:x, y:y, t:0,
+    at:this.time + this.delay,
+    radius:this.effectiveRadius(),
+    dmgFactor: dmgFactor === undefined ? 1 : dmgFactor,
+    cataclysm: !!cataclysm,
+    resolved:false,
+    snap:this.units.map(function(u){ return { id:u.id, x:u.pos.x, y:u.pos.y }; })
+  });
+  this.castsN++;
+  return this.casts[this.casts.length - 1];
+};
+
+// ── Cataclysm (Агани́м): по двойному тапу — 2 страйка по 75% вокруг каждого врага-героя ──
+Game.canCataclysm = function(){ return this.scepter && this.time >= this.cataclysmCd; };
+Game.cataclysm = function(){
+  if(this.state !== 'playing' || this.countdownT > 0) return false;
+  if(!this.canCataclysm()){ UI.toast(this.scepter ? 'Cataclysm на перезарядке' : 'Cataclysm требует Scepter'); return false; }
+  var C = CONFIG.dota.cataclysm, heroes = [], i;
+  for(i=0;i<this.units.length;i++){ if(this.units[i].isHero && this.units[i].team === TEAM.DIRE) heroes.push(this.units[i]); }
+  if(!heroes.length){ UI.toast('Cataclysm: на карте нет врагов-героев'); return false; }
+  var minD = unitsToPx(C.minDistUnits), maxD = unitsToPx(C.maxDistUnits);
+  for(i=0;i<heroes.length;i++){
+    var h = heroes[i];
+    for(var k=0;k<C.instances;k++){
+      var a = rand(0, TAU), dist = rand(minD, maxD);
+      this.pushStrike(h.pos.x + Math.cos(a)*dist, h.pos.y + Math.sin(a)*dist, C.dmgFactor, true);
+    }
+  }
+  this.cataclysmCd = this.time + C.cooldown;
+  this.cataclysmCount++;
+  this.addVision(heroes[0].pos.x, heroes[0].pos.y);
+  SFX.cast(); SFX.cast();
+  Ann.banner('CATACLYSM', 'Агани́м: ' + (heroes.length * C.instances) + ' страйка по ' + Math.round(C.dmgFactor*100) + '% урона', '#ff7a1a');
+  UI.toast('CATACLYSM! КД ' + C.cooldown + ' с', true);
+  UI.castFx();
+  return true;
+};
+
 // Разрешение каста: пришёл момент урона
 Game.resolveCast = function(c){
   var R = c.radius, i, u, d;
-  var rawDamage = CONFIG.dota.damage[c.ultLevel - 1] + (c.aghanim ? CONFIG.dota.scepterDamageBonus : 0);
-  var exactHp = !!Save.data.set.dotaHp;      // строгие дотерские HP/урон
+  var D = CONFIG.dota;
+  var baseDamage = this.strikeDamage() * (c.dmgFactor === undefined ? 1 : c.dmgFactor);
+  var exactHp = !this.profile.oneShot;       // в профиле «Как в доте» попадание не добивает
 
   // ближайшая ДОСТУПНАЯ для урона цель (герои/крипы врага)
   var best = null, bestD = 1e9;
@@ -1750,14 +1978,22 @@ Game.resolveCast = function(c){
 
   // ── урон ──
   var killedNow = 0, killedHeroes = 0;
+  // В доте урон ДЕЛИТСЯ поровну между всеми, кого накрыло (и только между врагами)
+  var share = (covered.length > 1 && D.splitDamage) ? baseDamage / covered.length : baseDamage;
+  share = Math.round(share);
+  var firstHit = covered.length ? covered[0] : null;
   for(i=0;i<covered.length;i++){
     u = covered[i];
-    // в обычном режиме ульта добивает (прямое попадание = килл), в «дотерском» — только дотерский урон
-    var applied = exactHp ? rawDamage : Math.max(rawDamage, u.hp);
+    // в профиле «Тренажёр» прямое попадание добивает; в «Как в доте» — только дотерский урон
+    var applied = exactHp ? share : Math.max(share, u.hp);
     this.dealDamage(u, applied, null, true);
     if(u.dead){ killedNow++; if(u.isHero) killedHeroes++; }
-    else FX.addFloat(u.pos.x, u.pos.y - 22*S, '-' + rawDamage, '#ffd15c', 13*S);
+    else FX.addFloat(u.pos.x, u.pos.y - 22*S, '-' + share, '#ffd15c', 13*S);
+    // Шард: попадание по вражескому ГЕРОЮ призывает Forge Spirit
+    if(this.shard && u.isHero) this.spawnSpirit(u.pos.x, u.pos.y, u.laneIdx);
   }
+  if(covered.length > 1) FX.addFloat(c.x, c.y - 34*S, 'УРОН ДЕЛИТСЯ НА ' + covered.length, '#ffd675', 13*S);
+  if(c.cataclysm) FX.addFloat(c.x, c.y - 62*S, 'CATACLYSM', '#ff7a1a', 15*S);
 
   // ── аналитика ошибки (как раньше, но по доступным целям) ──
   var rec = null;
@@ -1782,6 +2018,8 @@ Game.resolveCast = function(c){
   // ── счёт ──
   if(hit){
     this.hitsN++;
+    if(c.cataclysm) { /* Cataclysm — не рука игрока: серию и точность не трогаем */ }
+    else this.aimHitsN++;
     this.streak++;
     if(this.streak > this.bestStreak) this.bestStreak = this.streak;
     this.mult = Math.min(CONFIG.score.multMax, 1 + Math.floor(this.streak / CONFIG.score.multStep) * CONFIG.score.multStepVal);
@@ -1808,9 +2046,11 @@ Game.resolveCast = function(c){
     UI.flashStreak(this.streak);
   } else {
     SFX.miss();
-    this.streak = 0; this.mult = 1;
-    Ann.resetStreak(); Ann.resetMulti();
-    this.multiCount = 0;
+    if(!c.cataclysm){                       // промах автоматического Cataclysm серию игрока не обнуляет
+      this.streak = 0; this.mult = 1;
+      Ann.resetStreak(); Ann.resetMulti();
+      this.multiCount = 0;
+    }
     FX.miss(c.x, c.y, R);
     // подсказка, если зона накрыла только союзников или строение
     if(!best && buildingsIn){
@@ -1823,6 +2063,8 @@ Game.resolveCast = function(c){
   }
 
   // ── статистика ──
+  // Страйки Cataclysm ставит игра, а не рука: в разбор кастов, теплокарту и график ошибок они не идут.
+  if(c.cataclysm){ UI.syncHud(); return; }
   if(rec){
     this.records.push({ t:this.time, along:rec.along, dist:rec.dist, hit:hit, perp:rec.perp,
                         timeErr:rec.timeErr, stopped:rec.stopped, kind:rec.kind });
@@ -1880,6 +2122,19 @@ Game.upkeep = function(dt){
       this.spawnTower(tr.team, tr.laneIdx);
     }
   }
+  // призванные духи истекают
+  for(i=this.spirits.length-1;i>=0;i--){
+    var sp2 = this.spirits[i];
+    if(this.time >= sp2.until || !sp2.unit || sp2.unit.dead){
+      if(sp2.unit && !sp2.unit.dead){
+        FX.addRing(sp2.unit.pos.x, sp2.unit.pos.y, 4*S, 26*S, 0.4, '255,150,220', 2);
+        sp2.unit.dead = true;
+      }
+      this.spirits.splice(i,1);
+    }
+  }
+  // обзор от кастов истекает
+  for(i=this.vision.length-1;i>=0;i--) if(this.time >= this.vision[i].until) this.vision.splice(i,1);
 };
 
 Game.update = function(dt){
@@ -1898,7 +2153,8 @@ Game.update = function(dt){
     return;
   }
   this.time += dt;
-  this.mana = Math.min(CONFIG.strike.manaMax, (this.mana === undefined ? CONFIG.strike.manaMax : this.mana) + CONFIG.strike.manaRegen * dt);
+  var regen = this.profile.useMana ? (this.profile.manaRegen || 9) : CONFIG.strike.manaRegen;
+  this.mana = Math.min(CONFIG.strike.manaMax, (this.mana === undefined ? CONFIG.strike.manaMax : this.mana) + regen * dt);
 
   // ── юниты ──
   for(i=this.units.length-1;i>=0;i--){
@@ -1963,7 +2219,7 @@ Game.endRound = function(){
 };
 
 Game.stats = function(){
-  var casts = this.castsN || 0, hits = this.hitsN || 0;
+  var casts = this.aimCastsN || 0, hits = this.aimHitsN || 0;   // точность — только по кастам, наведённым вручную
   var aSum = 0, pSum = 0, an = 0, i, r;
   for(i=0;i<this.records.length;i++){
     r = this.records[i];
@@ -1974,6 +2230,7 @@ Game.stats = function(){
     acc: casts ? hits/casts : 0,
     heroAcc: casts ? this.heroHitsN/casts : 0,
     casts: casts, hits: hits, heroHits: this.heroHitsN,
+    cataclysms: this.cataclysmCount || 0, allCasts: this.castsN || 0,
     kills: this.kills, killsHeroes: this.killsHeroes, killsCreeps: this.killsCreeps,
     streak: this.streak, best: this.bestStreak, score: this.score, mult: this.mult,
     damage: this.damageDealt,
@@ -2417,6 +2674,39 @@ function drawCorpses(){
   }
 }
 
+// ── Обзор от кастов (в доте Sun Strike даёт flying vision 400 на 5.5 с) ──
+function drawVision(time){
+  var vs = Game.vision;
+  if(!vs.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(var i=0;i<vs.length;i++){
+    var v = vs[i];
+    var left = clamp((v.until - Game.time) / CONFIG.dota.visionDuration, 0, 1);
+    var a = Math.min(1, left * 3) * 0.9;
+    var g = ctx.createRadialGradient(v.x, v.y, v.r*0.05, v.x, v.y, v.r);
+    g.addColorStop(0, 'rgba(255,240,200,' + (0.10*a) + ')');
+    g.addColorStop(0.6, 'rgba(255,220,160,' + (0.05*a) + ')');
+    g.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.beginPath();
+    ctx.ellipse(v.x, v.y, v.r, v.r*0.78, 0, 0, TAU);
+    ctx.fillStyle = g; ctx.fill();
+    // пунктирная граница зоны обзора
+    ctx.beginPath();
+    ctx.ellipse(v.x, v.y, v.r, v.r*0.78, 0, 0, TAU);
+    ctx.setLineDash([6, 8]);
+    ctx.strokeStyle = 'rgba(255,225,160,' + (0.22*a) + ')';
+    ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+// Враг вне обзора в тумане войны — рисуем приглушённо (как «не видно»)
+function fogDim(u){
+  if(!(Game.diff.fog > 0) || u.team !== TEAM.DIRE) return 1;
+  return Game.visionAt(u.pos.x, u.pos.y) ? 1 : 0.42;
+}
+
 // ── Юниты: крипы линий, герои и вышки ──
 function drawUnits(time){
   var list = Game._drawOrder, labels = CONFIG.fx.unitLabels, hpBars = CONFIG.guide.hpBars;
@@ -2431,6 +2721,8 @@ function drawUnits(time){
       y += Math.sin(u.swingA) * r * 0.35 * k;
     }
     var spawn = easeOut(clamp(u.spawnT,0,1));
+    ctx.save();
+    ctx.globalAlpha = fogDim(u);      // в тумане войны видно только то, что попало в обзор
 
     // тень
     ctx.beginPath();
@@ -2483,6 +2775,36 @@ function drawUnits(time){
       // аура враждебности
       ctx.beginPath(); ctx.arc(x, y, r*1.25, 0, TAU);
       ctx.strokeStyle = 'rgba(230,90,70,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+    } else if(u.isSpirit){
+      // ── FORGE SPIRIT (Шард): алое пламя, обруч и два крыла-клинка ──
+      var as = Math.atan2(u.refDir.y, u.refDir.x);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var sg = ctx.createRadialGradient(x, y, r*0.1, x, y, r*2.1);
+      sg.addColorStop(0, 'rgba(255,180,230,0.55)');
+      sg.addColorStop(1, 'rgba(255,80,160,0)');
+      ctx.beginPath(); ctx.arc(x, y, r*2.1, 0, TAU); ctx.fillStyle = sg; ctx.fill();
+      ctx.restore();
+      // клинки
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(as);
+      ctx.beginPath(); ctx.moveTo(-r*0.2, -r*0.5); ctx.lineTo(r*1.5, -r*0.6); ctx.lineTo(r*1.2, -r*0.1); ctx.closePath();
+      ctx.beginPath(); ctx.moveTo(-r*0.2, r*0.5); ctx.lineTo(r*1.5, r*0.6); ctx.lineTo(r*1.2, r*0.1); ctx.closePath();
+      ctx.beginPath(); ctx.moveTo(-r*0.2, -r*0.5); ctx.lineTo(r*1.45, -r*0.55); ctx.lineTo(r*1.15, -r*0.12); ctx.closePath();
+      ctx.fillStyle = '#ff5aa0'; ctx.fill();
+      ctx.strokeStyle = 'rgba(70,10,40,0.9)'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-r*0.2, r*0.5); ctx.lineTo(r*1.45, r*0.55); ctx.lineTo(r*1.15, r*0.12); ctx.closePath();
+      ctx.fillStyle = '#ff7ab8'; ctx.fill(); ctx.stroke();
+      ctx.restore();
+      // корпус-ядро
+      var cgS = ctx.createRadialGradient(x - r*0.2, y - r*0.3, r*0.1, x, y, r*1.1);
+      cgS.addColorStop(0, '#ffe6f4'); cgS.addColorStop(0.5, '#ff6bb0'); cgS.addColorStop(1, '#7a1044');
+      ctx.beginPath(); ctx.arc(x, y, r*0.95, 0, TAU);
+      ctx.fillStyle = cgS; ctx.fill();
+      ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(60,6,34,0.95)'; ctx.stroke();
+      // обруч
+      ctx.beginPath(); ctx.arc(x, y, r*1.25, 0, TAU);
+      ctx.strokeStyle = 'rgba(255,200,235,0.7)'; ctx.lineWidth = 1.4; ctx.stroke();
     } else if(u.isRanged){
       // ── РЕНДЖ-КРИП: посох и светящийся шар ──
       var ag2 = Math.atan2(u.refDir.y, u.refDir.x);
@@ -2566,6 +2888,8 @@ function drawUnits(time){
       ctx.setLineDash([3,4]); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.restore();
+
+    ctx.restore();                    // конец «туманной» прозрачности
 
     // ── HP-полоска (как в доте: у врагов видна всегда) ──
     if(hpBars && spawn > 0.5 && (u.team === TEAM.DIRE || u.hp < u.hpMax)){
@@ -2794,11 +3118,13 @@ function drawCasts(time){
     ctx.restore();
 
     // ── подписи: радиус в юнитах доты, уровень ульта и остаток запала ──
-    var lvl = c.ultLevel + (c.aghanim ? ' +Агани́м' : '');
     var rU = Math.round(pxToUnits(R));
     ctx.font = '700 ' + Math.max(9, Math.round(9.5*S + 3)) + 'px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    var cap = 'SUN STRIKE ' + lvl + ' · R ' + rU + ' ед.';
+    var cat = c.cataclysm;
+    // в Cataclysm каст ставится рядом с целью, а не в неё — подсказываем это
+    var cap = cat ? ('CATACLYSM · ' + Math.round(CONFIG.dota.cataclysm.dmgFactor*100) + '% урона · R ' + rU + ' ед.')
+                  : ('SUN STRIKE · R ' + rU + ' ед. · ' + Math.round(Game.strikeDamage() * (c.dmgFactor === undefined ? 1 : c.dmgFactor)) + ' урона');
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
     ctx.strokeText(cap, c.x, c.y - R - 24*S);
     ctx.fillStyle = 'rgba(255,224,160,0.95)';
@@ -2899,6 +3225,9 @@ function drawReviews(time){
 function drawBooms(time){
   var bs = FX.booms();
   var darkMul = 1 / Math.max(1, bs.length);   // несколько взрывов не должны затемнять экран в ноль
+  // Свет складывается аддитивно: при нескольких столбах (Cataclysm) ослабляем каждый,
+  // иначе 2x2 одновременных удара выжигают весь кадр в белое.
+  var lightMul = 1 / Math.max(1, Math.sqrt(bs.length));
   for(var i=0;i<bs.length;i++){
     var b = bs[i], p = clamp(b.t / b.life, 0, 1);
     // профиль: мгновенный удар → затухание
@@ -2929,9 +3258,9 @@ function drawBooms(time){
 
     ctx.globalCompositeOperation = 'lighter';
     var col = ctx.createLinearGradient(0, topY, 0, botY);
-    col.addColorStop(0, 'rgba(255,240,190,' + (0.06*alpha) + ')');
-    col.addColorStop(0.55, 'rgba(255,215,120,' + (0.42*alpha) + ')');
-    col.addColorStop(1, 'rgba(255,150,40,' + (0.75*alpha) + ')');
+    col.addColorStop(0, 'rgba(255,240,190,' + (0.06*alpha*lightMul) + ')');
+    col.addColorStop(0.55, 'rgba(255,215,120,' + (0.42*alpha*lightMul) + ')');
+    col.addColorStop(1, 'rgba(255,150,40,' + (0.75*alpha*lightMul) + ')');
     // конус: сверху чуть шире
     ctx.beginPath();
     ctx.moveTo(b.x - w*1.25, topY);
@@ -2944,13 +3273,13 @@ function drawBooms(time){
     // ядро столба (мягкое по краям, чтобы не было резких прямоугольников)
     var coreW = w * 0.5;
     var col2 = ctx.createLinearGradient(0, topY, 0, botY);
-    col2.addColorStop(0, 'rgba(255,255,245,' + (0.04*alpha) + ')');
-    col2.addColorStop(1, 'rgba(255,255,235,' + (0.8*alpha) + ')');
+    col2.addColorStop(0, 'rgba(255,255,245,' + (0.04*alpha*lightMul) + ')');
+    col2.addColorStop(1, 'rgba(255,255,235,' + (0.8*alpha*lightMul) + ')');
     var col3 = ctx.createLinearGradient(b.x - coreW, 0, b.x + coreW, 0);
     col3.addColorStop(0, 'rgba(255,255,235,0)');
     col3.addColorStop(0.5, 'rgba(255,255,235,1)');
     col3.addColorStop(1, 'rgba(255,255,235,0)');
-    ctx.globalAlpha = alpha * 0.85;
+    ctx.globalAlpha = alpha * 0.85 * lightMul;
     ctx.fillStyle = col2;
     ctx.fillRect(b.x - coreW, topY, coreW*2, botY - topY);
     ctx.globalAlpha = alpha;
@@ -2960,8 +3289,8 @@ function drawBooms(time){
 
     // вспышка на земле
     var fg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r*2.1);
-    fg.addColorStop(0, 'rgba(255,255,240,' + (0.85*alpha) + ')');
-    fg.addColorStop(0.35, 'rgba(255,205,105,' + (0.45*alpha) + ')');
+    fg.addColorStop(0, 'rgba(255,255,240,' + (0.85*alpha*lightMul) + ')');
+    fg.addColorStop(0.35, 'rgba(255,205,105,' + (0.45*alpha*lightMul) + ')');
     fg.addColorStop(1, 'rgba(255,120,20,0)');
     ctx.beginPath();
     ctx.ellipse(b.x, b.y, b.r*2.1, b.r*1.25, 0, 0, TAU);
@@ -3285,7 +3614,7 @@ function drawHotkey(x, y, s, key){
   ctx.fillText(key, x, y + s*0.52);
 }
 // Иконка Sun Strike: солнце, уровень ульта пипсами, свип кулдауна
-function drawSunIcon(x, y, s, lvl, aghanim, cdFrac){
+function drawSunIcon(x, y, s, lvl, scepter, cdFrac){
   var r = s*0.44;
   // фон иконки
   ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
@@ -3314,16 +3643,17 @@ function drawSunIcon(x, y, s, lvl, aghanim, cdFrac){
     ctx.closePath();
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
   }
-  // уровень ульта — пипсы снизу
-  for(var k=0;k<4;k++){
+  // уровень Exort — пипсы снизу (до 10, поэтому мелкие)
+  var pips = Math.min(10, Math.max(1, lvl));
+  for(var k=0;k<pips;k++){
     ctx.beginPath();
-    var px = x - r*0.52 + k*r*0.35, py = y + r*0.62;
-    ctx.arc(px, py, r*0.10, 0, TAU);
-    ctx.fillStyle = k < lvl ? '#ffd15c' : 'rgba(255,255,255,0.18)';
+    var px = x - r*0.62 + k*(r*1.24/Math.max(1,pips-1 || 1)), py = y + r*0.66;
+    ctx.arc(px, py, Math.max(1, r*0.085), 0, TAU);
+    ctx.fillStyle = '#ffd15c';
     ctx.fill();
   }
-  // Аганим — корона сверху
-  if(aghanim){
+  // Скептер — корона сверху
+  if(scepter){
     ctx.beginPath();
     ctx.moveTo(x - r*0.5, y - r*0.72);
     ctx.lineTo(x - r*0.25, y - r*1.02);
@@ -3354,14 +3684,15 @@ function drawHudPanel(time){
 
   hudAnim.iconPulse += 0.02;
 
-  var pr = h * 0.36;                       // радиус портрета
-  var cx = pad + pr + 6, cy = y0 + h*0.5 - 4;
+  var narrowHud = W < 820;
+  var pr = h * (narrowHud ? 0.30 : 0.36);  // радиус портрета
+  var cx = pad + pr + 6, cy = y0 + (narrowHud ? h*0.34 : h*0.5 - 4);
   drawInvokerPortrait(cx, cy, pr, time);
 
   // ── иконки абилок ──
-  var s = h * 0.42;
-  var ix = cx + pr + 14;
-  var iy = y0 + h*0.46;
+  var s = h * (narrowHud ? 0.30 : 0.42);
+  var ix = cx + pr + (narrowHud ? 10 : 14);
+  var iy = y0 + (narrowHud ? h*0.32 : h*0.46);
   drawOrbIcon(ix, iy, s, '#4aa8ff', 'Q', 'Q');
   drawOrbIcon(ix + s*1.15, iy, s, '#b06bff', 'W', 'W');
   drawOrbIcon(ix + s*2.30, iy, s, '#ff9a2e', 'E', 'E');
@@ -3383,13 +3714,50 @@ function drawHudPanel(time){
   ctx.stroke();
   ctx.restore();
   drawHotkey(ix + s*3.45, iy, s, 'D');
-  // Sun Strike
-  var cdFrac = clamp(1 - (Game.time - Game.lastCast) / CONFIG.strike.castCooldown, 0, 1);
-  drawSunIcon(ix + s*4.60, iy, s, Game.ultLevel || 1, Game.aghanim, cdFrac);
+  // Ряд иконок: 5 обычно, 6 со Скептером — считаем шаг заранее, чтобы не налезть на полосы HP/маны
+  var iconStep = s*1.15;
+  var sunX = ix + iconStep*4;
+  // Sun Strike: пипсы по Exort, свип по реальному КД профиля
+  var cdTotal = Game.castCooldown();
+  var cdFrac = cdTotal > 0.05 ? clamp(1 - (Game.time - Game.lastCast) / cdTotal, 0, 1) : 0;
+  drawSunIcon(sunX, iy, s, Game.exortEffective(), Game.scepter, cdFrac);
+  // Cataclysm (Агани́м) — своя иконка со своим КД 90 с
+  if(Game.scepter){
+    var cx2 = ix + iconStep*5, cy2 = iy;
+    var catLeft = Math.max(0, Game.cataclysmCd - Game.time);
+    var catFrac = clamp(catLeft / CONFIG.dota.cataclysm.cooldown, 0, 1);
+    ctx.beginPath(); ctx.arc(cx2, cy2, s*0.42, 0, TAU);
+    var cg3 = ctx.createRadialGradient(cx2, cy2, s*0.05, cx2, cy2, s*0.42);
+    cg3.addColorStop(0, '#fff0d0'); cg3.addColorStop(0.5, '#ff7a1a'); cg3.addColorStop(1, '#7a2f07');
+    ctx.fillStyle = cg3; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.4; ctx.stroke();
+    // три луча-страйка
+    ctx.save();
+    ctx.translate(cx2, cy2);
+    ctx.strokeStyle = 'rgba(255,255,220,0.95)'; ctx.lineWidth = Math.max(1, s*0.07);
+    for(var L2=0; L2<3; L2++){
+      var la = -Math.PI/2 + (L2-1)*0.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(la)*s*0.1, Math.sin(la)*s*0.1);
+      ctx.lineTo(Math.cos(la)*s*0.34, Math.sin(la)*s*0.34);
+      ctx.stroke();
+    }
+    ctx.restore();
+    if(catFrac > 0.001){
+      ctx.beginPath(); ctx.moveTo(cx2, cy2);
+      ctx.arc(cx2, cy2, s*0.42, -Math.PI/2, -Math.PI/2 + TAU*catFrac);
+      ctx.closePath(); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill();
+    }
+    drawHotkey(cx2, cy2, s, 'C');
+  }
 
   // ── полосы HP и маны ──
-  var bx = ix + s*5.75, bw = Math.min(W - bx - pad - 4, 210), bh = Math.max(7, h*0.13);
+  var bx = ix + iconStep*(Game.scepter ? 5.75 : 4.6) + 4;
+  var bw = Math.max(60, Math.min(W - bx - pad - 4, 210)), bh = Math.max(7, h*0.13);
   var by = y0 + h*0.30;
+  if(narrowHud){          // на телефоне полосы уходят под портрет и иконки, во всю ширину
+    bx = pad + pr*2 + 8; bw = W - bx - pad; by = y0 + h*0.56; bh = Math.max(8, h*0.10);
+  }
   // HP
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, by-1, bw+2, bh+2);
   var hpg = ctx.createLinearGradient(bx, by, bx, by+bh);
@@ -3404,24 +3772,47 @@ function drawHudPanel(time){
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, my-1, bw+2, bh+2);
   var mg = ctx.createLinearGradient(bx, my, bx, my+bh);
   mg.addColorStop(0, '#7fc8ff'); mg.addColorStop(1, '#2a5f9e');
-  var manaFrac = clamp((Game.mana === undefined ? CONFIG.strike.manaMax : Game.mana) / CONFIG.strike.manaMax, 0, 1);
+  var manaNow = (Game.mana === undefined ? CONFIG.strike.manaMax : Game.mana);
+  var manaFrac = clamp(manaNow / CONFIG.strike.manaMax, 0, 1);
   ctx.fillStyle = mg; ctx.fillRect(bx, my, bw*manaFrac, bh);
+  // отметка стоимости каста: видно, хватает ли маны
+  if(Game.profile && Game.profile.useMana){
+    var costX = bx + bw * clamp(CONFIG.dota.manaCost / CONFIG.strike.manaMax, 0, 1);
+    ctx.fillStyle = 'rgba(255,240,200,0.9)';
+    ctx.fillRect(costX - 1, my, 2, bh);
+  }
   ctx.fillStyle = 'rgba(6,10,18,0.9)';
-  ctx.fillText('МАНА ' + Math.round(Game.mana === undefined ? CONFIG.strike.manaMax : Game.mana) + ' / ' + CONFIG.strike.manaMax, bx + 4, my + bh/2 + 0.5);
+  ctx.fillText('МАНА ' + Math.round(manaNow) + ' / ' + CONFIG.strike.manaMax +
+    (Game.profile && Game.profile.useMana ? (manaNow < CONFIG.dota.manaCost ? '  (мало на каст)' : '') : ''), bx + 4, my + bh/2 + 0.5);
 
   // ── строка с параметрами ульты (главное для тренажёра) ──
-  var infoY = my + bh + Math.max(9, h*0.12);
+  var infoY = my + bh + Math.max(8, h*0.10);
   ctx.font = '700 ' + Math.max(9, Math.round(h*0.115)) + 'px system-ui, sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(255,214,140,0.92)';
   var rUnits = Math.round(pxToUnits(Game.effectiveRadius()));
   var narrow = W < 820;                       // на телефоне текст короче, чтобы не наезжать на полосы
-  ctx.fillText(narrow
-    ? ('УЛТ ' + (Game.ultLevel||1) + '/4 · R ' + rUnits + ' · ' + Game.strikeDamage() + ' урона · ' + fmt2(Game.delay) + ' с')
-    : ('УЛЬТА ' + (Game.ultLevel||1) + '/4' + (Game.aghanim ? ' +АГАНИ́М' : '') +
-       ' · РАДИУС ' + rUnits + ' ед. · УРОН ' + Game.strikeDamage() +
-       (Save.data.set.dotaHp ? '' : ' (добивает)') +
-       ' · ЗАДЕРЖКА ' + fmt2(Game.delay) + ' с'), bx, infoY);
+  var cdLeft = Math.max(0, Game.castCooldown() - (Game.time - Game.lastCast));
+  var itemTag = (Game.scepter ? ' · СКЕПТЕР' : '') + (Game.shard ? ' · ШАРД' : '');
+  var exortTag = 'EX' + Game.exort + (Game.scepter ? '+1' : '');
+  var line = narrow
+    ? (exortTag + ' · ' + Game.strikeDamage() + ' урона · R ' + rUnits +
+       ' · ' + (cdLeft > 0.05 ? 'КД ' + fmt1(cdLeft) + ' с' : 'задержка ' + fmt2(Game.delay) + ' с'))
+    : (exortTag + (Game.scepter ? ' (' + Game.exortEffective() + ')' : '') +
+       ' · РАДИУС ' + rUnits + ' ед. · УРОН ' + Game.strikeDamage() + ' · ' + Game.profile.name.toUpperCase() +
+       (Game.profile.useMana ? ' (мана ' + CONFIG.dota.manaCost + ')' : ' (добивает)') +
+       ' · ЗАДЕРЖКА ' + fmt2(Game.delay) + ' с' + itemTag +
+       (Game.castCooldown() > 1 ? ' · КД ' + fmt1(cdLeft > 0 ? cdLeft : Game.castCooldown()) + ' с' : ''));
+  // если строке всё равно не хватает места — уменьшаем кегль, но не даём ей уехать за экран
+  var infoFont = Math.max(9, Math.round(h*0.115));
+  var tx = narrow ? pad : bx;                       // на телефоне — от левого края панели
+  var maxW = W - tx - pad;
+  ctx.font = '700 ' + infoFont + 'px system-ui, sans-serif';
+  while(infoFont > 8 && (ctx.measureText ? ctx.measureText(line).width : 0) > maxW){
+    infoFont -= 1;
+    ctx.font = '700 ' + infoFont + 'px system-ui, sans-serif';
+  }
+  ctx.fillText(line, tx, infoY);
 
   // ── боевой счёт линий (только если хватает места по ширине) ──
   if(Game.battle && W >= 820){
@@ -3449,6 +3840,7 @@ function draw(time){
   // снаряды → декор поверх → свет и частицы → разбор → интерфейс
   ctx.drawImage(ground, 0, 0, W, H);
   drawFog();
+  drawVision(time);          // обзор от кастов (прожигает туман светом)
   drawDecals();
   drawCorpses();
   drawCasts(time);
@@ -3563,38 +3955,79 @@ var UI = (function(){
     var kids = $('diffBox').children;
     for(var i=0;i<kids.length;i++) kids[i].classList.toggle('sel', (i+1) === id);
     var d = DIFFICULTIES[id];
-    var lvl = Save.data.set.ultLevel;
+    var p = ultParams(Save.data.set.exort, Save.data.set);
     $('diffHint').innerHTML = 'Героев-целей: <b>' + d.heroes + '</b>' +
       ' · скорость героев ×' + d.heroSpeedMul +
       ' · волна крипов ×' + d.waveMul +
-      ' · Sun Strike ' + lvl + ' ур. = радиус ' + Math.round(CONFIG.dota.radiusUnits[lvl-1]) + ' ед. / ' +
-      Math.round(unitsToPx(CONFIG.dota.radiusUnits[lvl-1])) + ' px' +
-      ' · урон ' + CONFIG.dota.damage[lvl-1] +
+      ' · Sun Strike: радиус <b>' + p.radiusUnits + ' ед.</b> (' + p.radiusPx + ' px), урон <b>' + p.dmg + '</b>' +
       (d.blink ? ' · <b>БЛИНКИ</b>' : '') + (d.stutter ? ' · <b>STUTTER-STEP</b>' : '') +
-      (d.fog > 0 ? ' · туман войны' : '');
+      (d.fog > 0 ? ' · туман войны' : '') +
+      (Save.data.set.shard ? ' · Forge Spirit' : '') + (Save.data.set.scepter ? ' · Cataclysm' : '');
   }
   // кнопки уровня ульта с точными дотерскими числами
   function markUlt(){
-    var box = $('ultBox');
-    var lvl = Save.data.set.ultLevel, agh = Save.data.set.aghanim;
-    for(var i=0;i<box.children.length;i++){
-      var b = box.children[i], L = parseInt(b.dataset.lvl, 10);
-      var p = ultParams(L, agh);
-      b.className = 'ult' + (L === lvl ? ' sel' : '');
-      b.innerHTML = '<span class="un">Ульта ' + L + (L === lvl ? ' ✓' : '') + '</span>' +
-                    '<span class="ud">радиус ' + p.units + ' ед. (' + p.px + ' px)<br>урон ' + p.dmg + '</span>';
+    var set = Save.data.set, D = CONFIG.dota;
+    // профили каста
+    var pb = $('profBox');
+    if(pb && !pb.children.length){
+      Object.keys(CONFIG.profiles).forEach(function(id){
+        var pr = CONFIG.profiles[id];
+        var b = document.createElement('button');
+        b.className = 'ult'; b.type = 'button'; b.dataset.prof = id;
+        b.addEventListener('click', function(){ SFX.unlock(); setProfile(id); });
+        pb.appendChild(b);
+      });
     }
-    var cur = ultParams(lvl, agh);
-    $('ultHint').innerHTML = 'В доте Sun Strike: задержка <b>1.7 с</b>, радиус <b>175/200/225/250</b> ед., ' +
-      'урон <b>200/250/300/350</b>, чистый урон по площади, строения неуязвимы. ' +
-      'Сейчас: радиус <b>' + cur.units + ' ед.</b> (' + cur.px + ' px, ' +
-      Math.round(cur.units / CONFIG.dota.heroRadiusUnits * 10)/10 + ' героя в поперечнике), урон <b>' + cur.dmg + '</b>.' +
-      (agh ? ' <b>Агани́м:</b> зона 425 ед.' : '') +
-      '<br>Крипы в линиях: ' + CONFIG.dota.creepHp.melee + ' HP (меле) и ' + CONFIG.dota.creepHp.ranged +
-      ' HP (рендж), у героев ' + CONFIG.dota.heroHp + ' HP. ' +
-      (Save.data.set.dotaHp
-        ? '<b>Строгий дотерский режим:</b> ульта бьёт ровно на ' + cur.dmg + ' — добивай раненых крипов и не жди мгновенных убийств героев.'
-        : '<b>Режим тренажёра:</b> прямое попадание убивает цель, но урон и зона показаны дотерские.');
+    if(pb){
+      for(var k=0;k<pb.children.length;k++){
+        var bp = pb.children[k], pid = bp.dataset.prof, prof = CONFIG.profiles[pid];
+        var sel = pid === set.profile;
+        bp.className = 'ult' + (sel ? ' sel' : '');
+        bp.innerHTML = '<span class="un">' + prof.name + (sel ? ' ✓' : '') + '</span>' +
+          '<span class="ud">КД ' + fmt1(prof.cd) + ' с' + (prof.useMana ? ' · мана ' + D.manaCost : ' · без маны') +
+          '<br>' + (prof.oneShot ? 'попадание добивает' : 'урон не добивает') + '</span>';
+      }
+    }
+    // уровни Exort
+    var box = $('ultBox');
+    var maxLvl = D.exortMax;
+    var need = maxLvl;
+    if(box.children.length !== need){
+      box.innerHTML = '';
+      for(var L=1; L<=need; L++){
+        (function(LV){
+          var b = document.createElement('button');
+          b.className = 'ult'; b.type = 'button'; b.dataset.lvl = LV;
+          b.addEventListener('click', function(){ SFX.unlock(); setExort(LV); });
+          box.appendChild(b);
+        })(L);
+      }
+    }
+    for(var i=0;i<box.children.length;i++){
+      var b2 = box.children[i], LV2 = parseInt(b2.dataset.lvl, 10);
+      var p = ultParams(LV2, set);
+      b2.className = 'ult' + (LV2 === set.exort ? ' sel' : '');
+      b2.innerHTML = '<span class="un">Exort ' + LV2 + (LV2 === set.exort ? ' ✓' : '') + '</span>' +
+                     '<span class="ud">урон ' + p.dmg + '</span>';
+    }
+    var cur = ultParams(set.exort, set);
+    var cd = (set.profile === 'dota') ? (D.cooldown - (set.talent ? D.talentCdReduction : 0)) : CONFIG.profiles.trainer.cd;
+    $('ultHint').innerHTML =
+      '<b>Числа из клиента (патч 7.41f):</b> задержка <b>1.7 с</b>, радиус <b>175 единиц</b> — фиксированный, ' +
+      'не растёт от уровня; урон считается по Exort: <b>175 + 50 за уровень</b> — 175…525 на 1–8, ' +
+      'с +1 сферой от Скептера (Exort 9) — 575; кулдаун <b>' + D.cooldown + ' с</b>, мана <b>' + D.manaCost + '</b>; ' +
+      'урон <b>делится поровну</b> между всеми, кого накрыло; строения неуязвимы; каст даёт обзор ' +
+      D.visionRadiusUnits + ' радиуса на ' + fmt1(D.visionDuration) + ' с.' +
+      '<br><b>Сейчас:</b> Exort ' + cur.exortEff + ' → урон <b>' + cur.dmg + '</b>, радиус <b>' + cur.radiusUnits +
+      ' ед.</b> (' + cur.radiusPx + ' px ≈ ' + (Math.round(cur.radiusUnits / D.heroRadiusUnits * 10)/10) + ' тела героя), ' +
+      'КД <b>' + fmt1(cd) + ' с</b>, мана <b>' + (set.profile === 'dota' ? D.manaCost : '—') + '</b>. ' +
+      (set.scepter ? '<b>Scepter:</b> Cataclysm — ' + D.cataclysm.instances + ' страйка по ' +
+        Math.round(D.cataclysm.dmgFactor*100) + '% урона в ' + D.cataclysm.minDistUnits + '–' + D.cataclysm.maxDistUnits +
+        ' ед. от каждого врага-героя, КД ' + D.cataclysm.cooldown + ' с (ульта тоже в КД). ' : '') +
+      (set.shard ? '<b>Shard:</b> попадание по герою призывает Forge Spirit на ' + D.shard.spiritDuration + ' с. ' : '') +
+      (set.profile === 'dota'
+        ? '<br><b>Профиль «Как в доте»:</b> урон не добивает — героя с ' + D.heroHp + ' HP ульта не убивает, крипа добивает только раненого.'
+        : '<br><b>Профиль «Тренажёр»:</b> КД почти нет, мана не тратится, попадание добивает — чтобы набить руку на упреждении.');
   }
   function buildDurationSelect(){
     var sel = $('durSel');
@@ -3634,9 +4067,10 @@ var UI = (function(){
     var st = Game.stats();
     $('rTitle').textContent = 'Итоги раунда';
     $('rSub').innerHTML = 'Сложность <b style="color:' + Game.diff.color + '">' + Game.diff.name +
-      '</b> · ' + Game.dur + ' с · Sun Strike <b>' + (Game.ultLevel||1) + ' ур.</b>' +
-      (Game.aghanim ? ' + Агани́м' : '') + ' · радиус <b>' + Math.round(pxToUnits(Game.effectiveRadius())) +
-      ' ед.</b> (' + Math.round(Game.effectiveRadius()/S) + ' px) · урон ' + Game.strikeDamage() +
+      '</b> · ' + Game.dur + ' с · <b>' + Game.profile.name + '</b> · Exort <b>' + Game.exortEffective() +
+      '</b> · радиус <b>' + Math.round(pxToUnits(Game.effectiveRadius())) +
+      ' ед.</b> (' + Math.round(Game.effectiveRadius()/S) + ' px) · урон <b>' + Game.strikeDamage() +
+      '</b>' + (Game.scepter ? ' · Скептер' : '') + (Game.shard ? ' · Шард' : '') +
       ' · задержка ' + fmt2(Game.delay) + ' с';
     $('rGrid').innerHTML =
       box('точность', (st.casts ? fmtPct(st.acc) : '—') + (res.newAcc ? ' <small>рекорд!</small>' : '')) +
@@ -3920,8 +4354,12 @@ function startAmbient(){
   Game.state = 'menu';
   Game.diff = DIFFICULTIES[Save.data.set.diff];
   Game.delay = Save.data.set.delay;
-  Game.ultLevel = Save.data.set.ultLevel;
-  Game.aghanim = Save.data.set.aghanim;
+  Game.profile = CONFIG.profiles[Save.data.set.profile] || CONFIG.profiles.trainer;
+  Game.exortMax = CONFIG.dota.exortMax;
+  Game.exort = clamp(Save.data.set.exort || CONFIG.strike.exortDefault, 1,
+                     CONFIG.dota.exortMax);
+  Game.scepter = !!Save.data.set.scepter;
+  Game.shard = !!Save.data.set.shard;
   Game.reset();
   Game.countdownT = 0;
   for(var i=0;i<Lanes.length;i++){
@@ -4004,7 +4442,8 @@ window.addEventListener('keydown', function(e){
   }
   // кнопка в фокусе: Space/Enter обрабатывает сама кнопка — иначе будет двойное действие
   if(tag === 'BUTTON' && (k === ' ' || k === 'Enter' || e.code === 'Space')) return;
-  if(k === ' ' || k === 'Spacebar' || e.code === 'Space'){ e.preventDefault(); togglePause(); }
+  if(k === 'c' || k === 'C' || k === 'с' || k === 'С'){ e.preventDefault(); Game.cataclysm(); }
+  else if(k === ' ' || k === 'Spacebar' || e.code === 'Space'){ e.preventDefault(); togglePause(); }
   else if(k === 'r' || k === 'R' || k === 'к' || k === 'К'){ e.preventDefault(); restartRound(); }
   else if(k === 'Escape'){ togglePause(); }
   else if(k === 'm' || k === 'M' || k === 'ь' || k === 'Ь'){ toggleMute(); }
@@ -4023,7 +4462,7 @@ function togglePause(){
 function restartRound(){
   SFX.unlock();
   var p = Prefs();
-  Game.start(p.diff, p.dur, p.delay, p.ultLevel, p.aghanim);
+  Game.start(p.diff, p.dur, p.delay, p);
   UI.show('game');
 }
 function toMenu(){
@@ -4041,9 +4480,7 @@ function toggleMute(){
 }
 function pickDifficulty(id){
   if(!DIFFICULTIES[id]) return;
-  var d = DIFFICULTIES[id];
   Save.data.set.diff = id;
-  if(d.ultLevel) Save.data.set.ultLevel = d.ultLevel;   // сложность = цели + уровень ульта
   Save.save();
   UI.markDifficulty(id);
   UI.markUlt();
@@ -4060,29 +4497,55 @@ function pickDifficulty(id){
 }
 function Prefs(){ return Save.data.set; }
 
-// Точные дотерские параметры Sun Strike по уровням — показываем в меню
-function ultParams(lvl, aghanim){
+// Параметры Sun Strike: радиус в доте фиксирован, урон растёт с уровнем Exort
+function ultParams(exort, set){
   var D = CONFIG.dota;
-  var units = aghanim ? D.radiusScepterUnits : D.radiusUnits[lvl-1];
-  var dmg = D.damage[lvl-1] + (aghanim ? D.scepterDamageBonus : 0);
-  return { units:units, px:Math.round(unitsToPx(units)), dmg:dmg };
+  var eff = clamp(exort + (set && set.scepter ? D.scepterOrbBonus : 0), 1, D.exortDamage.length);
+  return {
+    radiusUnits: D.radiusUnits,
+    radiusPx: Math.round(unitsToPx(D.radiusUnits)),
+    exortEff: eff,
+    dmg: D.exortDamage[eff - 1],
+    cd: CONFIG.profiles[(set && set.profile) || 'trainer'].cd,
+    mana: D.manaCost
+  };
 }
-function setUltLevel(lvl){
-  Save.data.set.ultLevel = clamp(lvl, 1, 4);
+function setExort(lvl){
+  var set = Save.data.set;
+  set.exort = clamp(parseInt(lvl, 10) || 1, 1, CONFIG.dota.exortMax);
   Save.save();
   UI.markUlt();
   SFX.ui();
-  UI.toast('Sun Strike ' + lvl + ' ур. · радиус ' + ultParams(lvl, Save.data.set.aghanim).units + ' ед.', true);
+  var p = ultParams(set.exort, set);
+  UI.toast('Exort ' + set.exort + ' · урон ' + p.dmg + ' · радиус ' + p.radiusUnits + ' ед.', true);
   if(Game.state === 'menu') startAmbient();
 }
-function setAghanim(on){
-  Save.data.set.aghanim = !!on;
+function setProfile(id){
+  if(!CONFIG.profiles[id]) return;
+  Save.data.set.profile = id;
   Save.save();
   UI.markUlt();
   SFX.ui();
+  var pr = CONFIG.profiles[id];
+  UI.toast('Профиль: ' + pr.name + ' — ' + pr.desc, true);
   if(Game.state === 'menu') startAmbient();
 }
-
+function setScepter(on){
+  Save.data.set.scepter = !!on;
+  Save.save();
+  UI.markUlt();
+  SFX.ui();
+  UI.toast(on ? 'Aghanim\'s Scepter: +1 к Exort и Cataclysm (двойной тап или C)' : 'Scepter снят', true);
+  if(Game.state === 'menu') startAmbient();
+}
+function setShard(on){
+  Save.data.set.shard = !!on;
+  Save.save();
+  UI.markUlt();
+  SFX.ui();
+  UI.toast(on ? 'Aghanim\'s Shard: попадание по герою призывает Forge Spirit' : 'Shard снят', true);
+  if(Game.state === 'menu') startAmbient();
+}
 // ── Кнопки меню/экранов ──
 UI.buildDifficultyButtons(pickDifficulty);
 UI.buildDurationSelect();
@@ -4124,19 +4587,18 @@ UI.buildDurationSelect();
       ub.appendChild(b);
     })(lv);
   }
-  $('cbAghanim').checked = Save.data.set.aghanim;
-  $('cbAghanim').addEventListener('change', function(){ setAghanim(this.checked); });
+  $('cbScepter').checked = Save.data.set.scepter;
+  $('cbScepter').addEventListener('change', function(){ setScepter(this.checked); });
+  $('cbShard').checked = Save.data.set.shard;
+  $('cbShard').addEventListener('change', function(){ setShard(this.checked); });
+  $('cbTalent').checked = Save.data.set.talent;
+  $('cbTalent').addEventListener('change', function(){
+    Save.data.set.talent = this.checked; Save.save(); UI.markUlt(); SFX.ui();
+  });
   $('cbVoice').checked = Save.data.set.annVoice;
   $('cbVoice').addEventListener('change', function(){
     Save.data.set.annVoice = this.checked; Save.save(); SFX.ui();
     if(this.checked) Ann.say('Аннонсер включён', 'ru-RU');
-  });
-  $('cbDotaHp').checked = !!Save.data.set.dotaHp;
-  $('cbDotaHp').addEventListener('change', function(){
-    Save.data.set.dotaHp = this.checked; Save.save(); SFX.ui();
-    UI.toast(this.checked ? 'Дотерские HP: добивай ультой раненых' : 'Режим «попадание = килл»', true);
-    UI.markUlt();
-    if(Game.state === 'menu') startAmbient();
   });
   $('cbStings').checked = Save.data.set.annStings;
   $('cbStings').addEventListener('change', function(){
