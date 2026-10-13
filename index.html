@@ -271,6 +271,9 @@ kbd{
       <label class="chip toggle">
         <input type="checkbox" id="cbStings"> Стингеры стриков
       </label>
+      <label class="chip toggle" title="Тёмный эпик, синтезируется на ходу: в меню звучит глуше, в бою открывается, под удары приглушается">
+        <input type="checkbox" id="cbMusic"> Музыка
+      </label>
     </div>
     <p class="tiny" id="ultHint" style="margin-top:6px"></p>
 
@@ -593,6 +596,22 @@ var CONFIG = {
   },
 
   // ──────── Аннонсер (стрики и мультикиллы, как в доте) ────────
+  // ── Звук: музыка (тоже синтез, без файлов) и громкости ──
+  music: {
+    enabled: true,          // галочка «музыка» в меню (сохраняется в настройках)
+    vol: 0.42,              // общая громкость музыки
+    menuFilter: 1200,       // ФНЧ в меню: оркестр звучит «издалека», глуше
+    menuVolMul: 0.7,        // в меню чуть тише, чем в бою
+    bassVol: 0.16, padVol: 0.07, leadVol: 0.055, bellVol: 0.05,
+    step: 0.30,             // длительность шага секвенсора, сек (медленный эпик ~100 bpm)
+    reverb: 0.34,           // доля сигнала в свёрточном «зале»
+    reverbTime: 2.1,        // длина хвоста зала, сек
+    duckVol: 0.45, duckTime: 0.5   // приглушение музыки под удар Sun Strike (side-chain)
+  },
+  audio: {
+    maxVoices: 7,           // предел одновременных эффектов: в Cataclysm 6 ударов в кадре = каша
+    sfxVol: 1.0
+  },
   ann: {
     voice: true,                 // Web Speech API: произносить фразы аннонсера
     stings: true,                // синтезированные музыкальные стингеры
@@ -635,7 +654,14 @@ var CONFIG = {
     reviewGhost: true,           // показывать, где цель была в момент каста
     unitLabels: true,            // подписывать цели
     trees: 46,                   // сколько деревьев в декоре
-    rocks: 26                    // сколько камней в декоре
+    rocks: 26,                   // сколько камней в декоре
+    // ── Атмосфера: свет источников, виньетка и смена дня/ночи ──
+    atmosphere: true,            // общий выключатель (ниже — отдельные слои)
+    dayCycle: 180,               // полный цикл суток, сек
+    lightVol: 1.0,               // множитель яркости световых пятен
+    vignette: 0.5,               // затемнение по краям кадра
+    riverLife: true,             // бегущие блики на воде
+    runeGlow: true               // пульсация рун на земле
   },
 
   // ──────── Хитмап ────────
@@ -706,7 +732,7 @@ var Save = (function(){
             exort:CONFIG.strike.exortDefault, profile:CONFIG.strike.profileDefault,
             scepter:CONFIG.strike.scepterDefault, shard:CONFIG.strike.shardDefault,
             talent:false,
-            annVoice:true, annStings:true }
+            annVoice:true, annStings:true, music:CONFIG.music.enabled }
     };
   }
   function resetToDefaults(){                  // чистим тот же объект: ссылка Save.data не должна устаревать
@@ -750,6 +776,7 @@ var Save = (function(){
     data.set.talent = !!data.set.talent;
     if(data.set.annVoice === undefined) data.set.annVoice = true;
     if(data.set.annStings === undefined) data.set.annStings = true;
+    if(data.set.music === undefined) data.set.music = CONFIG.music.enabled;
     data.damage = Number(data.damage) || 0;
     data.level = Math.max(1, data.level|0);
     return data;
@@ -792,7 +819,10 @@ var Save = (function(){
 // ══════════════════════════════════════════════════════════════════════════════
 var SFX = (function(){
   var ctx = null, master = null, enabled = true, noiseBuf = null;
+  var masterLP = null, sfxBus = null, musicBus = null, verb = null, voices = [], duckUntil = 0;
+  var unlocked = false;                   // звук включается только после первого клика/тапа/клавиши
   function init(){
+    if(!unlocked) return null;            // до жеста пользователя аудиоконтекст не создаём
     if(ctx) return ctx;
     var AC = window.AudioContext || window.webkitAudioContext;
     if(!AC) return null;
@@ -800,7 +830,38 @@ var SFX = (function(){
       ctx = new AC();
       master = ctx.createGain();
       master.gain.value = 0.7;
+      // Общий ФНЧ: в меню музыка и бой звучат «издалека», в бою фильтр открывается
+      masterLP = ctx.createBiquadFilter();
+      masterLP.type = 'lowpass';
+      masterLP.frequency.value = 20000;
+      masterLP.Q.value = 0.35;
+      sfxBus = ctx.createGain();
+      musicBus = ctx.createGain();
+      sfxBus.connect(masterLP);
+      musicBus.connect(masterLP);
+      masterLP.connect(master);
       master.connect(ctx.destination);
+      // Свёрточный «зал» из синтезированного шума — без внешних импульсов
+      if(ctx.createConvolver){
+        try{
+          var rt = CONFIG.music.reverbTime;
+          var len = Math.max(1, Math.floor(ctx.sampleRate * rt));
+          var ir = ctx.createBuffer(2, len, ctx.sampleRate);
+          for(var ch=0; ch<2; ch++){
+            var dd = ir.getChannelData(ch);
+            for(var j=0;j<len;j++){
+              var k = 1 - j/len;                 // экспоненциальное затухание хвоста
+              dd[j] = (Math.random()*2 - 1) * k * k;
+            }
+          }
+          verb = ctx.createConvolver();
+          verb.buffer = ir;
+          var vg = ctx.createGain();
+          vg.gain.value = CONFIG.music.reverb;
+          verb.connect(vg);
+          vg.connect(masterLP);
+        }catch(e){ verb = null; }
+      }
       var n = ctx.sampleRate * 1.0, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
       for(var i=0;i<n;i++) d[i] = Math.random()*2 - 1;
       noiseBuf = b;
@@ -809,6 +870,29 @@ var SFX = (function(){
   }
   function resume(){ if(ctx && ctx.state === 'suspended') ctx.resume(); }
   function now(){ return ctx.currentTime; }
+  function sfxOut(){ return sfxBus || master; }
+  // Панорама по позиции на арене: бой на боковой линии слышно с той стороны
+  function spatial(node, x){
+    if(!ctx.createStereoPanner || x === undefined) return node;
+    var w = (typeof W === 'number' && W > 0) ? W : 1280;
+    var pan = ctx.createStereoPanner();
+    pan.pan.value = clamp((x / w - 0.5) * 1.5, -0.85, 0.85);
+    node.connect(pan);
+    return pan;
+  }
+  // Лимит одновременных эффектов и приглушение музыки под крупные удары
+  function voiceBudget(){
+    var t = now();
+    voices = voices.filter(function(v){ return v > t - 0.25; });
+    if(voices.length >= CONFIG.audio.maxVoices) return false;
+    voices.push(t);
+    return true;
+  }
+  function duck(){
+    if(!musicBus) return;
+    duckUntil = now() + CONFIG.music.duckTime;
+  }
+  function noVoice(o){ return o && (o.force || o.music); }
   function env(node, t, a, d, peak){
     var g = node.gain;
     g.cancelScheduledValues(t);
@@ -819,17 +903,24 @@ var SFX = (function(){
   function tone(o){
     if(!enabled || !init() || !ctx) return;
     var t = now() + (o.at || 0);
+    if(!noVoice(o) && !voiceBudget()) return;
+    if(o.duck) duck();
     var osc = ctx.createOscillator(), g = ctx.createGain();
     osc.type = o.type || 'sine';
     osc.frequency.setValueAtTime(o.f0, t);
     if(o.f1 && o.f1 !== o.f0) osc.frequency.exponentialRampToValueAtTime(Math.max(1,o.f1), t + (o.sweep || o.dur));
     env(g, t, o.a || 0.005, o.dur, o.vol == null ? 0.25 : o.vol);
-    osc.connect(g); g.connect(master);
+    osc.connect(g);
+    var out = o.music ? (musicBus || master) : spatial(g, o.x);
+    out.connect(sfxOut());
+    if(verb && !o.dry) g.connect(verb);
     osc.start(t); osc.stop(t + (o.a||0.005) + o.dur + 0.05);
   }
   function noise(o){
     if(!enabled || !init() || !ctx) return;
     var t = now() + (o.at || 0);
+    if(!noVoice(o) && !voiceBudget()) return;
+    if(o.duck) duck();
     var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     var flt = ctx.createBiquadFilter();
     flt.type = o.filter || 'bandpass';
@@ -838,11 +929,81 @@ var SFX = (function(){
     flt.Q.value = o.q == null ? 1.1 : o.q;
     var g = ctx.createGain();
     env(g, t, o.a || 0.01, o.dur, o.vol == null ? 0.2 : o.vol);
-    src.connect(flt); flt.connect(g); g.connect(master);
+    src.connect(flt); flt.connect(g);
+    var out2 = o.music ? (musicBus || master) : spatial(g, o.x);
+    out2.connect(sfxOut());
+    if(verb && !o.dry) g.connect(verb);
     src.start(t); src.stop(t + (o.a||0.01) + o.dur + 0.08);
   }
+  // ── Музыка: тёмный эпик в духе доты — бас, пэд, мелодия и колокольчики.
+  //    Всё синтезируется, шаги планируются на такт вперёд, чтобы не «дрожал» ритм.
+  var mStep = 0, mNextAt = 0, mPlaying = false;
+  // i - v - VI - IV (ля-минор), корни: A2, E2, F2, D2
+  var PROG = [0, 7, 8, 5];
+  var PAD  = [[0,3,7], [0,3,7], [0,4,7], [0,3,7]];
+  // фразы мелодии: полутоны от корня и длительность; -1 = пауза
+  var LEAD = [
+    [[12,1],[15,1],[19,2],[17,1],[15,1],[12,2]],
+    [[12,1],[16,1],[19,2],[21,1],[19,1],[16,2]],
+    [[17,1],[20,1],[24,2],[20,1],[17,1],[15,2]],
+    [[14,1],[17,1],[22,2],[19,1],[17,1],[14,2]]
+  ];
+  function hz(semi){ return 55 * Math.pow(2, semi/12); }        // 55 Гц = A1
+  function scheduleBar(){
+    var M = CONFIG.music, bar = mStep, ch = PROG[bar % PROG.length];
+    var lead = LEAD[bar % LEAD.length], t = 0;
+    // бас на 1-й и 5-й доле
+    tone({f0: hz(ch), type:'triangle', dur:1.5, a:0.02, vol:M.bassVol, at:t, music:true, dry:true, force:true});
+    tone({f0: hz(ch), type:'sine', dur:1.5, a:0.02, vol:M.bassVol*0.8, at:t+1.2, music:true, dry:true, force:true});
+    // пэд: аккорд на весь такт
+    for(var i=0;i<PAD[bar % PAD.length].length;i++){
+      tone({f0: hz(ch + 24 + PAD[bar % PAD.length][i]), type:'sine',
+            dur:2.3, a:0.5, vol:M.padVol, at:0.02, music:true, force:true});
+    }
+    // мелодия
+    var at = 0.05;
+    for(var k=0;k<lead.length;k++){
+      var semi = lead[k][0], dur = lead[k][1] * M.step;
+      tone({f0: hz(ch + semi), type:'triangle', dur:dur*0.9, a:0.06, vol:M.leadVol, at:at, music:true, force:true});
+      tone({f0: hz(ch + semi + 12), type:'sine', dur:dur*0.6, a:0.1, vol:M.leadVol*0.35, at:at, music:true, force:true});
+      at += dur;
+    }
+    // колокольчик-отметка на 4-й доле
+    tone({f0: hz(ch + 36), type:'sine', dur:1.1, a:0.004, vol:M.bellVol, at:1.8, music:true, force:true});
+    mStep++;
+  }
+  function musicUpdate(dt){
+    if(!enabled || !ctx || !mPlaying) return;   // init() тут не зовём: музыка ждёт жеста пользователя
+    var M = CONFIG.music, t = now();
+    if(t >= mNextAt){                       // планируем такт вперёд: ритм не зависит от частоты кадров
+      scheduleBar();
+      mNextAt = Math.max(t + 0.05, mNextAt + M.step * 4);
+    }
+    // громкость: в бою громче, в меню глуше и тише; под удары — duck
+    var target = M.vol * ((Game.state === 'playing') ? 1 : M.menuVolMul) * (t < duckUntil ? M.duckVol : 1);
+    var g0 = musicBus.gain;
+    g0.value = g0.value + (target - g0.value) * Math.min(1, dt * 2.2);
+    // фильтр: в меню «издалека», в бою открыт
+    var lp = masterLP.frequency;
+    var want = (Game.state === 'playing') ? 16000 : M.menuFilter;
+    lp.value = lp.value + (want - lp.value) * Math.min(1, dt * 1.2);
+  }
+  function musicStart(){
+    if(!unlocked) return;
+    init(); resume();
+    if(!ctx) return;
+    mPlaying = true;
+    mNextAt = 0;
+  }
+  function musicStop(){ mPlaying = false; }
+
   return {
-    unlock:function(){ init(); resume(); },
+    unlock:function(){ unlocked = true; init(); resume(); if(Save.data.set.music) musicStart(); },
+    musicStart:musicStart, musicStop:musicStop, musicUpdate:musicUpdate,
+    musicInfo:function(){ return { playing:mPlaying, steps:mStep, ctx: !!ctx, unlocked:unlocked,
+                                   gain: musicBus ? musicBus.gain.value : 0,
+                                   filter: masterLP ? masterLP.frequency.value : 0 }; },
+    setMusicOn:function(v){ if(v) musicStart(); else musicStop(); },
     setEnabled:function(v){ enabled = v; if(master) master.gain.value = v ? 0.7 : 0.0; },
     isEnabled:function(){ return enabled; },
 
@@ -853,54 +1014,57 @@ var SFX = (function(){
       tone({f0:660, f1:990, type:'sine', dur:0.1, vol:0.05, at:0.02});
     },
     // Удар Sun Strike: яркий «шинг» и тяжёлый бум с длинным хвостом — как в доте
-    sunstrike:function(){
+    sunstrike:function(x, mul){
+      if(!enabled || !init() || !ctx) return;
+      if(!voiceBudget()) return;          // удар целиком — один голос, иначе Cataclysm превращается в шум
+      var m = mul == null ? 1 : mul;
       // металлический блик сверху
-      tone({f0:2100, f1:2900, type:'triangle', dur:0.09, a:0.002, vol:0.18});
-      tone({f0:3150, f1:4200, type:'sine', dur:0.07, a:0.002, vol:0.1, at:0.01});
+      tone({f0:2100, f1:2900, type:'triangle', dur:0.09, a:0.002, vol:0.18*m, x:x, duck:true, force:true});
+      tone({f0:3150, f1:4200, type:'sine', dur:0.07, a:0.002, vol:0.10*m, at:0.01, x:x, force:true});
       // удар
-      tone({f0:180, f1:38, type:'sine', dur:0.65, a:0.003, vol:0.5});
-      tone({f0:380, f1:70, type:'sawtooth', dur:0.3, a:0.002, vol:0.14});
+      tone({f0:180, f1:38, type:'sine', dur:0.65, a:0.003, vol:0.5*m, x:x, force:true});
+      tone({f0:380, f1:70, type:'sawtooth', dur:0.3, a:0.002, vol:0.14*m, x:x, force:true});
       // пыль и хвост
-      noise({f0:2400, f1:180, dur:0.55, vol:0.34, filter:'lowpass', q:0.7});
-      noise({f0:7000, f1:2200, dur:0.2, vol:0.14});
-      noise({f0:300, f1:80, dur:1.1, vol:0.12, filter:'lowpass', q:0.9, at:0.05});
+      noise({f0:2400, f1:180, dur:0.55, vol:0.34*m, filter:'lowpass', q:0.7, x:x, force:true});
+      noise({f0:7000, f1:2200, dur:0.2, vol:0.14*m, x:x, force:true});
+      noise({f0:300, f1:80, dur:1.1, vol:0.12*m, filter:'lowpass', q:0.9, at:0.05, x:x, force:true});
     },
     // Попадание: звонкий пинг + искры
-    hit:function(mult){
+    hit:function(mult, x){
       var m = mult || 1;
-      tone({f0:880*m, f1:1320*m, type:'triangle', dur:0.2, vol:0.26});
-      tone({f0:1760*m, f1:2640*m, type:'sine', dur:0.12, vol:0.12, at:0.02});
-      noise({f0:5200, f1:3000, dur:0.12, vol:0.09, filter:'highpass'});
+      tone({f0:880*m, f1:1320*m, type:'triangle', dur:0.2, vol:0.26, x:x});
+      tone({f0:1760*m, f1:2640*m, type:'sine', dur:0.12, vol:0.12, at:0.02, x:x});
+      noise({f0:5200, f1:3000, dur:0.12, vol:0.09, filter:'highpass', x:x});
     },
     // Мисс: глухое «вшух»
-    miss:function(){
-      noise({f0:900, f1:150, dur:0.26, vol:0.22, filter:'lowpass', q:0.7, a:0.008});
-      tone({f0:220, f1:110, type:'sine', dur:0.2, vol:0.08});
+    miss:function(x){
+      noise({f0:900, f1:150, dur:0.26, vol:0.22, filter:'lowpass', q:0.7, a:0.008, x:x});
+      tone({f0:220, f1:110, type:'sine', dur:0.2, vol:0.08, x:x});
     },
     // Добивание крипа: короткий «кошелёк» (звонкая монетка)
-    lastHit:function(){
-      tone({f0:1180, f1:1560, type:'square', dur:0.06, vol:0.06});
-      tone({f0:2360, type:'sine', dur:0.05, vol:0.03, at:0.02});
+    lastHit:function(x){
+      tone({f0:1180, f1:1560, type:'square', dur:0.06, vol:0.06, x:x});
+      tone({f0:2360, type:'sine', dur:0.05, vol:0.03, at:0.02, x:x});
     },
     // Смерть юнита
-    death:function(u){
-      if(u.isTower){ noise({f0:600, f1:90, dur:0.6, vol:0.24, filter:'lowpass', q:0.8}); return; }
+    death:function(u, x){
+      if(u.isTower){ noise({f0:600, f1:90, dur:0.6, vol:0.24, filter:'lowpass', q:0.8, x:x}); return; }
       if(u.isHero){
-        tone({f0:300, f1:120, type:'sawtooth', dur:0.4, vol:0.16});
-        noise({f0:1500, f1:200, dur:0.4, vol:0.14, filter:'lowpass'});
+        tone({f0:300, f1:120, type:'sawtooth', dur:0.4, vol:0.16, x:x});
+        noise({f0:1500, f1:200, dur:0.4, vol:0.14, filter:'lowpass', x:x});
         return;
       }
-      noise({f0:1600, f1:400, dur:0.16, vol:0.1, filter:'bandpass', q:0.9});
+      noise({f0:1600, f1:400, dur:0.16, vol:0.1, filter:'bandpass', q:0.9, x:x});
     },
     // Болт вышки
     towerShot:function(){
       tone({f0:900, f1:1500, type:'square', dur:0.07, vol:0.05});
       noise({f0:2600, f1:1200, dur:0.09, vol:0.05, filter:'bandpass', q:1.4});
     },
-    towerFall:function(){
-      tone({f0:120, f1:34, type:'sine', dur:0.9, a:0.004, vol:0.42});
-      noise({f0:900, f1:120, dur:0.9, vol:0.3, filter:'lowpass', q:0.6});
-      noise({f0:3000, f1:600, dur:0.3, vol:0.12});
+    towerFall:function(x){
+      tone({f0:120, f1:34, type:'sine', dur:0.9, a:0.004, vol:0.42, x:x, force:true});
+      noise({f0:900, f1:120, dur:0.9, vol:0.3, filter:'lowpass', q:0.6, x:x, force:true});
+      noise({f0:3000, f1:600, dur:0.3, vol:0.12, x:x, force:true});
     },
     // Смерть крипа от ульты/в бою (лёгкий хруст)
     crunch:function(){ noise({f0:1200, f1:300, dur:0.12, vol:0.09, filter:'bandpass', q:1.2}); },
@@ -918,16 +1082,37 @@ var SFX = (function(){
       if(level >= 4) tone({f0: 65.4 * (1 + level*0.05), f1: 49, type:'sine', dur:0.7, vol:0.22, a:0.01});
     },
     // Блинк цели: короткий восходящий «вжик» — сигнал, что цель телепортнулась
-    blink:function(){
-      tone({f0:520, f1:1500, type:'sine', dur:0.12, vol:0.13, a:0.004});
-      noise({f0:2600, f1:900, dur:0.1, vol:0.06, filter:'bandpass', q:1.6});
+    blink:function(x){
+      tone({f0:520, f1:1500, type:'sine', dur:0.12, vol:0.13, a:0.004, x:x});
+      noise({f0:2600, f1:900, dur:0.1, vol:0.06, filter:'bandpass', q:1.6, x:x});
     },
     levelUp:function(){
       [0,5,9,12].forEach(function(s,i){ tone({f0:392*Math.pow(2,s/12), type:'triangle', dur:0.22, vol:0.2, at:i*0.09}); });
     },
     ui:function(){ tone({f0:620, f1:880, type:'square', dur:0.05, vol:0.05}); },
     countdown:function(hi){ tone({f0: hi?900:520, type:'triangle', dur:0.12, vol:0.14}); },
-    roundEnd:function(){ [0,-3,-7].forEach(function(s,i){ tone({f0:523*Math.pow(2,s/12), type:'triangle', dur:0.3, vol:0.18, at:i*0.13}); }); }
+    roundEnd:function(){
+      [0,-3,-7,-12].forEach(function(s,i){ tone({f0:523*Math.pow(2,s/12), type:'triangle', dur:0.3, vol:0.18, at:i*0.13, force:true, dry:true}); });
+      tone({f0:65.4, type:'sine', dur:1.6, a:0.02, vol:0.22, force:true, dry:true});
+    },
+    // ── Шум боя в фоне: редкие «отголоски» сражения, чтобы карта не была мёртвой ──
+    _ambT:0,
+    ambientUpdate:function(dt){
+      if(!ctx || !unlocked) return;
+      this._ambT -= dt;
+      if(this._ambT > 0) return;
+      this._ambT = rand(1.6, 4.5);
+      if(!enabled || Game.state === 'results') return;
+      var menu = (Game.state !== 'playing');
+      var units = Game.units;
+      if(!units.length) return;
+      var u = units[(Math.random() * units.length) | 0];
+      var vol = menu ? 0.05 : 0.11;
+      var kind = Math.random();
+      if(kind < 0.45)      tone({f0: rand(140, 320), f1: rand(90, 180), type:'triangle', dur:0.5, a:0.01, vol:vol, x:u.pos.x});
+      else if(kind < 0.8)  noise({f0: rand(700, 1800), f1: rand(200, 600), dur:0.35, vol:vol, filter:'bandpass', q:1.1, x:u.pos.x});
+      else                 tone({f0: rand(1200, 2100), f1: rand(1600, 2600), type:'sine', dur:0.25, a:0.005, vol:vol*0.8, x:u.pos.x});
+    }
   };
 })();
 
@@ -1241,7 +1426,7 @@ Unit.prototype.update = function(dt, time){
           pathAtOut(this);
           FX.blink(this.pos.x, this.pos.y);
           this.blinkFx = 1;
-          SFX.blink();
+          SFX.blink(this.pos.x);
         }
       }
     }
@@ -1429,12 +1614,22 @@ var FX = (function(){
     addRing(x, y, radius*0.18, radius*2.9, 0.36, '255,255,240', 3.4);
     addRing(x, y, radius*0.30, radius*2.2, 0.52, '255,214,130', 2.6);
     addRing(x, y, radius*0.55, radius*1.45, 0.75, '255,150,60', 1.6);
+    // тонкая быстрая ударная волна — «стекло» расходится быстрее пыли
+    addRing(x, y, radius*0.05, radius*3.6, 0.26, '255,255,255', 1.1);
     // горящие искры вверх и в стороны
     for(var i=0;i<30;i++){
       var a = rand(0,TAU), sp = rand(60, 380) * S;
       addPart(x + Math.cos(a)*rand(0,radius*0.6), y + Math.sin(a)*rand(0,radius*0.4),
               Math.cos(a)*sp, Math.sin(a)*sp*0.65 - rand(60,300)*S, rand(0.35,0.95),
               rand(1.3,3.8)*S, i%4===0 ? '255,255,230' : (i%3===0 ? '255,190,80' : '255,110,25'), 'spark');
+    }
+    // комья земли: подлетают вверх и падают (гравитация у обычных частиц)
+    var clods = MOBILE ? 5 : 9;
+    for(var c2=0;c2<clods;c2++){
+      var ca = rand(0,TAU), cr2 = rand(radius*0.15, radius*0.75);
+      addPart(x + Math.cos(ca)*cr2, y + Math.sin(ca)*cr2*0.7,
+              Math.cos(ca)*rand(40,180)*S, -rand(120,300)*S, rand(0.5,0.9),
+              rand(1.8,4.2)*S, c2 % 3 === 0 ? '90,74,50' : '120,96,60', 'clod');
     }
     // пыль и гарь по земле
     for(var j=0;j<16;j++){
@@ -1446,6 +1641,22 @@ var FX = (function(){
     shake(6.2*S);
     doFlash(0.36, '255,230,180');
   }
+  // Гибель героя от ульты: золотая вспышка и разлёт искр — «забрал»
+  function heroDown(x, y, r){
+    addRing(x, y, r*0.4, r*3.4, 0.5, '255,236,180', 2.4);
+    addRing(x, y, r*0.2, r*2.2, 0.8, '255,180,90', 1.6);
+    for(var i=0;i<22;i++){
+      var a = rand(0,TAU), sp = rand(80, 420)*S;
+      addPart(x, y - r*0.3, Math.cos(a)*sp, Math.sin(a)*sp*0.6 - rand(80, 260)*S, rand(0.4,1.0),
+              rand(1.4,3.4)*S, i%2 ? '255,215,120' : '255,255,235', 'spark');
+    }
+    for(var k=0;k<8;k++){
+      var a2 = rand(0,TAU);
+      addPart(x, y, Math.cos(a2)*rand(30,90)*S, -rand(40,140)*S, rand(0.5,0.9),
+              rand(2,4)*S, '170,140,90', 'smoke');
+    }
+    doFlash(0.22, '255,238,190');
+  }
   // Промах: пыль и серый «вшух» на месте удара
   function miss(x, y, radius){
     addRing(x, y, radius*0.9, radius*1.25, 0.3, '150,150,140', 1.4);
@@ -1454,6 +1665,11 @@ var FX = (function(){
       addPart(x, y, Math.cos(a)*rand(20,90)*S, Math.sin(a)*rand(20,70)*S - 20*S, rand(0.3,0.6),
               rand(1.6,3.2)*S, '130,125,105', 'dot');
     }
+  }
+  // Светлячок: медленно всплывает и покачивается — просто жизнь на карте
+  function mote(x, y){
+    var col = Math.random() < 0.5 ? '255,235,170' : '190,235,210';
+    addPart(x, y, rand(-6, 6)*S, rand(-16, -6)*S, rand(2.6, 4.6), rand(0.9, 1.7)*S, col, 'mote');
   }
   // Искра «кипящего» маркера каста
   function fuse(x, y, radius){
@@ -1508,6 +1724,12 @@ var FX = (function(){
       p.x += p.vx*dt; p.y += p.vy*dt;
       if(p.kind === 'smoke'){ p.vy -= 24*S*dt; p.vx *= (1 - 1.4*dt); }
       else if(p.kind === 'ember'){ p.vy -= 40*S*dt; p.vx *= (1 - 0.9*dt); }
+      else if(p.kind === 'mote'){
+        // светлячок: покачивается в стороны и чуть ускоряется вверх
+        p.vy -= 5*S*dt;
+        p.vx += Math.sin(p.life*1.7 + p.rot) * 22*S*dt;
+        p.vx *= (1 - 0.35*dt); p.vy *= (1 - 0.2*dt);
+      }
       else { p.vy += 420*S*dt; p.vx *= (1 - 1.1*dt); }
       p.rot += dt*3;
     }
@@ -1550,6 +1772,7 @@ var FX = (function(){
     shakes.mag = 0; flash = 0;
   }
   return { addPart:addPart, addRing:addRing, addFloat:addFloat, shake:shake, sunstrike:sunstrike,
+           heroDown:heroDown, mote:mote,
            blink:blink, death:death, towerFall:towerFall, slash:slash, projectile:projectile,
            miss:miss, fuse:fuse,
            addDecal:addDecal, addCorpse:addCorpse, emberTick:emberTick, update:update, clear:clear,
@@ -1765,11 +1988,11 @@ Game.killUnit = function(u, src, byUlt){
   var D = CONFIG.dota;
   var scoring = (this.state === 'playing');   // в фоне меню бой идёт «молча»
   FX.death(u);
-  SFX.death(u);
+  SFX.death(u, u.pos.x);
 
   if(u.isTower){
     FX.towerFall(u.pos.x, u.pos.y, u.r);
-    SFX.towerFall();
+    SFX.towerFall(u.pos.x);
     // вышка восстанавливается через время, чтобы арена не опустела
     this.units.splice(this.units.indexOf(u), 1);
     this.towerRespawns.push({ team:u.team, laneIdx:u.laneIdx, at:this.time + D.towerRespawn });
@@ -1791,6 +2014,7 @@ Game.killUnit = function(u, src, byUlt){
     this.units.splice(this.units.indexOf(u), 1);
     this.heroRespawns.push({ at:this.time + CONFIG.restartDelay + rand(CONFIG.unit.respawnJitter[0], CONFIG.unit.respawnJitter[1]) });
     if(byUlt && scoring){
+      if(u.isHero) FX.heroDown(u.pos.x, u.pos.y, u.r);
       this.killsHeroes++;
       this.score += 150;
       FX.addFloat(u.pos.x, u.pos.y - 30*S, 'УБИЙСТВО ГЕРОЯ +150', '#ffc247', 16*S);
@@ -1814,7 +2038,7 @@ Game.killUnit = function(u, src, byUlt){
     this.killsCreeps++;
     this.score += CONFIG.score.lastHitBonus;
     this.xpGain += D.creepBounty;
-    SFX.lastHit();
+    SFX.lastHit(u.pos.x);
     FX.addFloat(u.pos.x, u.pos.y - 18*S, 'ДОБИЛ +' + CONFIG.score.lastHitBonus, '#9ee06a', 12*S);
   }
 };
@@ -1974,7 +2198,7 @@ Game.resolveCast = function(c){
   if(heroHit) this.heroHitsN++;
 
   FX.sunstrike(c.x, c.y, R);
-  SFX.sunstrike();
+  SFX.sunstrike(c.x, c.cataclysm ? 0.55 : 1);     // в Cataclysm удары приглушены, чтобы не перегружать
 
   // ── урон ──
   var killedNow = 0, killedHeroes = 0;
@@ -2032,7 +2256,7 @@ Game.resolveCast = function(c){
     if(rec) rec.mult = this.mult;
     FX.addFloat(c.x, c.y - 46*S, '+' + gain + (this.mult > 1 ? '  ×' + String(this.mult).replace('.', ',') : ''), '#9ee06a', 16*S);
     this.xpGain += CONFIG.score.xpPerHit + Math.round(this.damageDealt * CONFIG.score.xpPerDamage * 0.1);
-    SFX.hit(clamp(1 + Math.floor(this.streak/6)*0.08, 1, 1.5));
+    SFX.hit(clamp(1 + Math.floor(this.streak/6)*0.08, 1, 1.5), c.x);
 
     // мультикилл в окне 18 с (как в доте) + за одно попадание
     if(this.time < this.multiUntil) this.multiCount += killedNow;
@@ -2045,7 +2269,7 @@ Game.resolveCast = function(c){
     Ann.checkStreak(this.streak);
     UI.flashStreak(this.streak);
   } else {
-    SFX.miss();
+    SFX.miss(c.x);
     if(!c.cataclysm){                       // промах автоматического Cataclysm серию игрока не обнуляет
       this.streak = 0; this.mult = 1;
       Ann.resetStreak(); Ann.resetMulti();
@@ -2137,6 +2361,18 @@ Game.upkeep = function(dt){
   for(i=this.vision.length-1;i>=0;i--) if(this.time >= this.vision[i].until) this.vision.splice(i,1);
 };
 
+// Светлячки над картой: тихая жизнь, чтобы фон не был статичным
+Game.fireflies = function(dt){
+  this._flyT = (this._flyT || 0) - dt;
+  if(this._flyT > 0) return;
+  this._flyT = rand(0.7, 1.9);
+  if(!CONFIG.fx.atmosphere) return;
+  if(FX.parts().filter(function(p){ return p.kind === 'mote'; }).length >= (MOBILE ? 7 : 12)) return;
+  var x = rand(Field.x + 20*S, Field.x + Field.w - 20*S);
+  var y = rand(Field.y + Field.h*0.25, Field.y + Field.h - 12*S);
+  FX.mote(x, y);
+};
+
 Game.update = function(dt){
   var i;
   FX.update(dt);
@@ -2163,6 +2399,7 @@ Game.update = function(dt){
     if(u.dead && this.units[i] === u) this.units.splice(i,1);
   }
   this.upkeep(dt);
+  this.fireflies(dt);
   this.updateCasts(dt);
 
   // разборы кастов живут ограниченное время
@@ -2288,6 +2525,7 @@ function resize(){
   drawGroundCache();
   buildOverlayCache();      // деревья/камни поверх юнитов — объёмный декор
   buildFogCache();
+  buildLightCache();        // свет источников, виньетка, блики реки
   Game.diff = DIFFICULTIES[Game.state === 'menu' ? n : Game.diff.id];
 }
 
@@ -2310,6 +2548,15 @@ function drawGroundCache(){
   g.save();
   g.beginPath();
   var rw = Field.h * 0.34;
+  riverPoly = [
+    { x:-40, y: Field.y + Field.h + 40 },
+    { x: Field.x + Field.w * 0.30, y: -40 },
+    { x: Field.x + Field.w * 0.30 + rw, y: -40 },
+    { x: -40, y: Field.y + Field.h + 40 + rw * 0.55 }
+  ];
+  var rdx = riverPoly[1].x - riverPoly[0].x, rdy = riverPoly[1].y - riverPoly[0].y;
+  var rl = Math.sqrt(rdx*rdx + rdy*rdy) || 1;
+  riverDir = { x: rdx/rl, y: rdy/rl };
   g.moveTo(-40, Field.y + Field.h + 40);
   g.lineTo(Field.x + Field.w * 0.30, -40);
   g.lineTo(Field.x + Field.w * 0.30 + rw, -40);
@@ -2412,16 +2659,20 @@ function drawGroundCache(){
     g.fillStyle = rg; g.fill();
     g.strokeStyle = 'rgba(18,18,16,0.8)'; g.lineWidth = 1.2; g.stroke();
   }
-  // руны на земле (декор в духе доты)
+  // руны на земле (декор в духе доты) — запоминаем точки, чтобы сверху пульсировало свечение
+  runeSpots = [];
   for(i=0;i<Lanes.length;i++){
     var l = Lanes[i];
     for(j=0;j<2;j++){
       var p = pathAt(l, l.len * (0.3 + j*0.4));
       var ox = 26*S * (j ? 1 : -1);
+      var rx0 = p.x + p.nx*ox, ry0 = p.y + p.ny*ox, ra0 = Math.atan2(p.ty, p.tx);
+      var hue = (i*2 + j) % 2 === 0 ? '200,170,90' : '120,200,190';   // жёлтые и «аквамариновые» руны
+      runeSpots.push({ x:rx0, y:ry0, rot:ra0, cr:hue, r:9*S, phase:(i*2+j) * 1.7 });
       g.save();
-      g.translate(p.x + p.nx*ox, p.y + p.ny*ox);
-      g.rotate(Math.atan2(p.ty, p.tx));
-      g.strokeStyle = 'rgba(200,170,90,0.16)';
+      g.translate(rx0, ry0);
+      g.rotate(ra0);
+      g.strokeStyle = 'rgba(' + hue + ',0.20)';
       g.lineWidth = 1.4*S;
       g.beginPath(); g.arc(0, 0, 9*S, 0, TAU); g.stroke();
       g.beginPath(); g.arc(0, 0, 4.5*S, 0, TAU); g.stroke();
@@ -2495,6 +2746,10 @@ function drawFog(){
 var overlay = document.createElement('canvas');
 var octx = overlay.getContext('2d');
 var treeSpots = [], rockSpots = [];
+var runeSpots = [];                                   // руны: земля + пульсирующее свечение сверху
+var lightCache = document.createElement('canvas');    // слой источников света (строится при ресайзе)
+var vigCache = document.createElement('canvas');      // виньетка
+var riverPoly = null, riverDir = { x:1, y:-1 };       // контур реки для бегущих бликов
 // Точки вышек: декор не должен их перекрывать (иначе башни не видно)
 function towerSpotsList(){
   var out = [];
@@ -2672,6 +2927,150 @@ function drawCorpses(){
     ctx.strokeStyle = 'rgba(12,10,8,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.restore();
   }
+}
+
+// ── Источники света: пятна у вышек (свои цвета команд), у рун и общий «лунный» свет сверху.
+//    Рисуются один раз в offscreen-канвас, на кадре — одно drawImage с 'lighter'.
+function buildLightCache(){
+  var A = CONFIG.fx;
+  lightCache.width = Math.max(1, Math.floor(W * dpr));
+  lightCache.height = Math.max(1, Math.floor(H * dpr));
+  var g = lightCache.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  if(!A.atmosphere) return;
+  g.globalCompositeOperation = 'lighter';
+  var i;
+
+  // мягкий общий свет над картой (как будто сверху стоит светило).
+  // Только радиальным пятном с растворяющимися краями: прямоугольная заливка даёт
+  // видимую рамку по границе поля, а аддитивное свечение эту рамку подсвечивает.
+  var sky = g.createRadialGradient(Field.x + Field.w*0.5, Field.y + Field.h*0.36,
+                                   Field.h*0.10, Field.x + Field.w*0.5, Field.y + Field.h*0.42, Field.w*0.62);
+  sky.addColorStop(0, 'rgba(120,150,120,0.050)');
+  sky.addColorStop(0.55, 'rgba(96,118,96,0.020)');
+  sky.addColorStop(1, 'rgba(60,74,60,0)');
+  g.fillStyle = sky;
+  g.fillRect(Field.x - 2, Field.y - 2, Field.w + 4, Field.h + 4);
+
+  // пятна у вышек: Свет — тёплый, Тьма — багровый
+  for(i=0;i<Lanes.length;i++){
+    var lane = Lanes[i];
+    for(var k=0;k<2;k++){
+      var radiant = (k === 0);
+      var p = pathAt(lane, lane.len * (radiant ? 0.045 : 0.955));
+      var col = radiant ? '150,255,170' : '255,120,110';
+      var gl = g.createRadialGradient(p.x, p.y, 2*S, p.x, p.y, 62*S);
+      gl.addColorStop(0, 'rgba(' + col + ',0.20)');
+      gl.addColorStop(0.45, 'rgba(' + col + ',0.075)');
+      gl.addColorStop(1, 'rgba(' + col + ',0)');
+      g.beginPath();
+      g.ellipse(p.x, p.y, 62*S, 46*S, 0, 0, TAU);
+      g.fillStyle = gl; g.fill();
+    }
+  }
+
+  // руны: тёплое и аквамариновое свечение
+  for(i=0;i<runeSpots.length;i++){
+    var rn = runeSpots[i];
+    var rg = g.createRadialGradient(rn.x, rn.y, 1*S, rn.x, rn.y, 26*S);
+    rg.addColorStop(0, 'rgba(' + rn.cr + ',0.22)');
+    rg.addColorStop(0.5, 'rgba(' + rn.cr + ',0.07)');
+    rg.addColorStop(1, 'rgba(' + rn.cr + ',0)');
+    g.beginPath();
+    g.ellipse(rn.x, rn.y, 26*S, 17*S, rn.rot, 0, TAU);
+    g.fillStyle = rg; g.fill();
+  }
+
+  // виньетка (затемнение по краям) — отдельный кэш, рисуется поверх кадра
+  vigCache.width = Math.max(1, Math.floor(W * dpr));
+  vigCache.height = Math.max(1, Math.floor(H * dpr));
+  var v = vigCache.getContext('2d');
+  v.setTransform(dpr, 0, 0, dpr, 0, 0);
+  v.clearRect(0, 0, W, H);
+  var vr = Math.max(W, H) * 0.78;
+  var vg2 = v.createRadialGradient(W*0.5, H*0.46, vr*0.34, W*0.5, H*0.46, vr);
+  vg2.addColorStop(0, 'rgba(0,0,0,0)');
+  vg2.addColorStop(0.7, 'rgba(2,4,3,0.28)');
+  vg2.addColorStop(1, 'rgba(1,2,2,0.72)');
+  v.fillStyle = vg2;
+  v.fillRect(0, 0, W, H);
+}
+
+// ── День и ночь: медленный цикл, меняет тон карты, яркость источников и виньетку ──
+function nightFactor(time){
+  var A = CONFIG.fx;
+  var ph = (time / Math.max(1, A.dayCycle)) % 1;      // 0 — день, 0.5 — ночь
+  return 0.5 - 0.5 * Math.cos(ph * TAU);
+}
+function drawAtmosphere(time){
+  var A = CONFIG.fx;
+  if(!A.atmosphere) return;
+  var night = nightFactor(time);
+  // световые пятна: ночью заметнее, днём почти растворяются
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = clamp((0.42 + 0.75*night) * A.lightVol, 0.1, 1);
+  ctx.drawImage(lightCache, 0, 0, W, H);
+  ctx.restore();
+  // тёплый день ↔ холодная ночь: один лёгкий тон поверх карты
+  var r = Math.round(255 - 190*night), g2 = Math.round(190 - 100*night), b = Math.round(110 + 70*night);
+  ctx.fillStyle = 'rgba(' + r + ',' + g2 + ',' + b + ',' + (0.030 + 0.055*night).toFixed(3) + ')';
+  ctx.fillRect(0, 0, W, H);
+}
+function drawVignette(time){
+  var A = CONFIG.fx;
+  if(!A.atmosphere) return;
+  var night = nightFactor(time);
+  ctx.save();
+  ctx.globalAlpha = clamp(A.vignette * (0.55 + 0.6*night), 0, 1);
+  ctx.drawImage(vigCache, 0, 0, W, H);
+  ctx.restore();
+}
+
+// ── Живая вода: блики бегут по реке ──
+function drawRiverLife(time){
+  if(!CONFIG.fx.riverLife || !riverPoly) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(riverPoly[0].x, riverPoly[0].y);
+  for(var i=1;i<riverPoly.length;i++) ctx.lineTo(riverPoly[i].x, riverPoly[i].y);
+  ctx.closePath();
+  ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  for(var k=0;k<6;k++){
+    var t = ((time * 0.055) + k * 0.17) % 1;
+    var x = lerp(riverPoly[0].x, riverPoly[1].x, t) + riverDir.y * (12 + (k%3)*10) * S;
+    var y = lerp(riverPoly[0].y, riverPoly[1].y, t) - riverDir.x * (12 + (k%3)*10) * S;
+    var ang = Math.atan2(riverDir.y, riverDir.x);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 78*S, 6*S, ang, 0, TAU);
+    ctx.fillStyle = 'rgba(180,235,245,' + (0.030 + 0.02*Math.sin(time*1.4 + k)).toFixed(3) + ')';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Руны пульсируют: над рисунком на земле дышит светлое кольцо ──
+function drawRuneGlow(time){
+  if(!CONFIG.fx.runeGlow || !runeSpots.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(var i=0;i<runeSpots.length;i++){
+    var rn = runeSpots[i];
+    var pulse = 0.5 + 0.5*Math.sin(time*1.1 + rn.phase);
+    var R = rn.r * (1.25 + 0.22*pulse);
+    ctx.beginPath();
+    ctx.ellipse(rn.x, rn.y, R, R*0.65, rn.rot, 0, TAU);
+    ctx.strokeStyle = 'rgba(' + rn.cr + ',' + (0.05 + 0.10*pulse).toFixed(3) + ')';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(rn.x, rn.y, R*1.7, R*1.05, rn.rot, 0, TAU);
+    ctx.strokeStyle = 'rgba(' + rn.cr + ',' + (0.02 + 0.045*pulse).toFixed(3) + ')';
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // ── Обзор от кастов (в доте Sun Strike даёт flying vision 400 на 5.5 с) ──
@@ -3333,6 +3732,30 @@ function drawParticles(){
       ctx.strokeStyle = 'rgba(' + p.color + ',' + (a*0.6) + ')';
       ctx.lineWidth = p.size*0.7;
       ctx.stroke();
+    } else if(p.kind === 'mote'){
+      // мягкий ореол светлячка
+      var mgs = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*4.5);
+      mgs.addColorStop(0, 'rgba(' + p.color + ',' + (0.55*a) + ')');
+      mgs.addColorStop(0.35, 'rgba(' + p.color + ',' + (0.16*a) + ')');
+      mgs.addColorStop(1, 'rgba(' + p.color + ',0)');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size*4.5, 0, TAU);
+      ctx.fillStyle = mgs; ctx.fill();
+    } else if(p.kind === 'clod'){
+      // ком земли: тёмный камешек, вращается в полёте, не светится
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.beginPath();
+      ctx.moveTo(-p.size, 0.3*p.size);
+      ctx.lineTo(-p.size*0.3, -p.size);
+      ctx.lineTo(p.size*0.8, -p.size*0.4);
+      ctx.lineTo(p.size, p.size*0.5);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(' + p.color + ',' + (0.5 + 0.45*a) + ')';
+      ctx.fill();
+      ctx.restore();
+      ctx.globalCompositeOperation = 'lighter';
     }
   }
   ctx.restore();
@@ -3840,7 +4263,10 @@ function draw(time){
   // снаряды → декор поверх → свет и частицы → разбор → интерфейс
   ctx.drawImage(ground, 0, 0, W, H);
   drawFog();
+  drawRiverLife(time);       // блики на воде
   drawVision(time);          // обзор от кастов (прожигает туман светом)
+  drawAtmosphere(time);      // свет вышек и рун + тон дня/ночи
+  drawRuneGlow(time);
   drawDecals();
   drawCorpses();
   drawCasts(time);
@@ -3868,6 +4294,7 @@ function draw(time){
     ctx.strokeStyle = 'rgba(255,214,120,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
   }
 
+  drawVignette(time);        // мягкое затемнение по краям
   // вспышка экрана
   var fl = FX.getFlash();
   if(fl > 0.002){
@@ -4379,6 +4806,7 @@ function ambientUpdate(dt){
     if(u.dead) Game.units.splice(i,1);
   }
   Game.upkeep(dt);
+  Game.fireflies(dt);
   var ds = FX.decals();
   FX.update(dt);
 }
@@ -4595,6 +5023,13 @@ UI.buildDurationSelect();
   $('cbTalent').addEventListener('change', function(){
     Save.data.set.talent = this.checked; Save.save(); UI.markUlt(); SFX.ui();
   });
+  $('cbMusic').checked = !!Save.data.set.music;
+  $('cbMusic').addEventListener('change', function(){
+    Save.data.set.music = !!this.checked; Save.save(); SFX.ui();
+    SFX.unlock();
+    SFX.setMusicOn(Save.data.set.music);
+    if(Game.state === 'menu') startAmbient();
+  });
   $('cbVoice').checked = Save.data.set.annVoice;
   $('cbVoice').addEventListener('change', function(){
     Save.data.set.annVoice = this.checked; Save.save(); SFX.ui();
@@ -4668,6 +5103,9 @@ function loop(ts){
   else if(Game.state === 'menu') ambientUpdate(dt);
   else if(Game.state === 'results') FX.update(dt);   // взрывы догорают за экраном итогов
 
+  SFX.musicUpdate(dt);            // музыка живёт своей жизнью: в меню глуше, в бою открывается
+  SFX.ambientUpdate(dt);          // редкие шумы боя (в меню — приглушённо)
+
   draw(nowT);
 }
 
@@ -4706,6 +5144,7 @@ requestAnimationFrame(loop);
 window.SunStrike = {
   CONFIG: CONFIG, DIFFICULTIES: DIFFICULTIES, Game: Game, Save: Save, S: function(){ return S; },
   Field: function(){ return Field; }, Lanes: function(){ return Lanes; },
+  SFX: SFX, Ann: Ann, UI: UI,
   resize: resize, drawHeatmap: drawHeatmap, drawErrGraph: drawErrGraph
 };
 
