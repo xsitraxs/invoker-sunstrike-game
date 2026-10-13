@@ -110,7 +110,12 @@ h2.sec{
 }
 .row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
 .diffs{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
-@media (max-width:520px){ .diffs{grid-template-columns:repeat(2,1fr)} }
+.drills{grid-template-columns:repeat(5,1fr)}
+.drills .diff{padding:7px 8px}
+.drills .diff .dd{font-size:9px}
+.drills .diff .dm{position:absolute; top:5px; right:7px; font-size:9px; color:var(--toxic)}
+@media (max-width:820px){ .drills{grid-template-columns:repeat(3,1fr)} }
+@media (max-width:520px){ .diffs{grid-template-columns:repeat(2,1fr)} .drills{grid-template-columns:repeat(2,1fr)} }
 .diff{
   position:relative; text-align:left; padding:8px 9px; border-radius:9px; cursor:pointer;
   background:linear-gradient(180deg, rgba(43,37,23,.6), rgba(20,26,20,.65));
@@ -248,6 +253,10 @@ kbd{
     <div class="diffs" id="diffBox"></div>
     <p class="tiny" id="diffHint" style="margin-top:7px"></p>
 
+    <h2 class="sec">Упражнение <span class="tiny">(цель на раунд)</span></h2>
+    <div class="diffs drills" id="drillBox"></div>
+    <p class="tiny" id="drillHint" style="margin-top:7px"></p>
+
     <h2 class="sec">Профиль каста</h2>
     <div class="ults two" id="profBox"></div>
 
@@ -294,6 +303,15 @@ kbd{
       <div class="k">Уровень <b id="lvlNum" style="color:var(--gold)">1</b> · XP</div>
       <div class="xpbar" style="margin-top:5px"><i id="lvlBar"></i></div>
       <div class="tiny" id="lvlTxt" style="margin-top:4px"></div>
+    </div>
+
+    <h2 class="sec">Упражнения: рекорды и прогресс</h2>
+    <div class="grid" id="drillStats"></div>
+    <div class="cvwrap" style="margin-top:7px"><canvas id="menuProg" style="height:140px"></canvas></div>
+    <div class="legend">
+      <span><i style="background:#7fc35a"></i>точность дня</span>
+      <span><i style="background:#e2503a"></i>касты дня</span>
+      <span><i style="background:#ffc247"></i>лучший день</span>
     </div>
 
     <h2 class="sec">Хитмап промахов (вся история)</h2>
@@ -367,6 +385,10 @@ kbd{
       <div class="k">Уровень <b id="rLvl" style="color:var(--gold)">1</b> · +<b id="rXpGain" style="color:var(--gold)">0</b> XP за раунд</div>
       <div class="xpbar" style="margin-top:5px"><i id="rLvlBar"></i></div>
       <div class="tiny" id="rLvlTxt" style="margin-top:4px"></div>
+    </div>
+    <div class="box" id="rDrill" style="margin-top:7px; display:none">
+      <div class="k">Упражнение</div>
+      <div class="tiny" id="rDrillTxt" style="margin-top:4px"></div>
     </div>
 
     <div class="footer">
@@ -512,7 +534,8 @@ var CONFIG = {
     delayMin: 1.0,               // минимум слайдера, сек
     delayMax: 2.5,               // максимум слайдера, сек
     exortDefault: 4,             // уровень Exort по умолчанию (урон 175 + 50/ур.)
-    profileDefault: 'trainer',   // профиль каста по умолчанию
+    profileDefault: 'trainer',
+    drillDefault: 'free',        // упражнение по умолчанию — свободный бой   // профиль каста по умолчанию
     scepterDefault: false,       // Aghanim's Scepter (Cataclysm)
     shardDefault: false,         // Aghanim's Shard (Forge Spirit)
     castAnim: 0.30,              // длительность визуальной анимации каста, сек
@@ -596,6 +619,40 @@ var CONFIG = {
   },
 
   // ──────── Аннонсер (стрики и мультикиллы, как в доте) ────────
+  // ── Упражнения (дриллы): у каждого своя цель и правила ──
+  //    goal.type: heroHits — попасть по героям, streak — серия без промахов,
+  //               centerHits — попасть близко к центру зоны
+  drills: {
+    free: {
+      name: 'Свободный бой', short: 'Свободно', color: '#8fb2c9',
+      desc: 'обычный раунд: крипы, вышки, герои — без цели',
+      goal: null
+    },
+    heroes: {
+      name: 'Только герои', short: 'Герои', color: '#e2703a',
+      desc: 'на карте одни герои — никаких волн и вышек, не отвлекайся на крипов',
+      noCreeps: true, noTowers: true,
+      goal: { type:'heroHits', count:8, label:'попаданий по героям' }
+    },
+    streak: {
+      name: 'Серия без промахов', short: 'Серия', color: '#c9a227',
+      desc: 'промах обнуляет серию — доведи её до цели',
+      goal: { type:'streak', count:10, label:'попаданий подряд' }
+    },
+    center: {
+      name: 'В центр', short: 'Центр', color: '#59c1c9',
+      desc: 'идут только точные попадания: ближе 0.35 радиуса зоны',
+      centerFrac: 0.35,
+      goal: { type:'centerHits', count:6, label:'точных попаданий' }
+    },
+    fog: {
+      name: 'Туман войны', short: 'Туман', color: '#7b6cc9',
+      desc: 'цели видно только в обзоре — бей по тому, что видишь',
+      forceFog: true,
+      goal: { type:'heroHits', count:6, label:'попаданий по героям' }
+    }
+  },
+
   // ── Звук: музыка (тоже синтез, без файлов) и громкости ──
   music: {
     enabled: true,          // галочка «музыка» в меню (сохраняется в настройках)
@@ -728,10 +785,12 @@ var Save = (function(){
       kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
       bestAcc:0, bestScore:0, bestStreak:0,
       shots:[],                                  // {a: along, p: perp, h: 0/1} — для хитмапа
+      drills:{},                                 // рекорды упражнений: {tries, cleared, best, time}
+      days:{},                                   // точность по дням: 'ГГГГ-ММ-ДД' -> {c: касты, h: попадания}
       set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false,
             exort:CONFIG.strike.exortDefault, profile:CONFIG.strike.profileDefault,
             scepter:CONFIG.strike.scepterDefault, shard:CONFIG.strike.shardDefault,
-            talent:false,
+            talent:false, drill:CONFIG.strike.drillDefault,
             annVoice:true, annStings:true, music:CONFIG.music.enabled }
     };
   }
@@ -774,6 +833,10 @@ var Save = (function(){
     data.set.scepter = !!data.set.scepter;
     data.set.shard = !!data.set.shard;
     data.set.talent = !!data.set.talent;
+    data.set.drill = CONFIG.drills[data.set.drill] ? data.set.drill : CONFIG.strike.drillDefault;
+    data.drills = (data.drills && typeof data.drills === 'object') ? data.drills : {};
+    data.days = (data.days && typeof data.days === 'object') ? data.days : {};
+    pruneDays(data.days);
     if(data.set.annVoice === undefined) data.set.annVoice = true;
     if(data.set.annStings === undefined) data.set.annStings = true;
     if(data.set.music === undefined) data.set.music = CONFIG.music.enabled;
@@ -807,11 +870,36 @@ var Save = (function(){
   function reset(){
     var s = data.set;
     data = { xp:0, level:1, kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
-             bestAcc:0, bestScore:0, bestStreak:0, shots:[], set:s };
+             bestAcc:0, bestScore:0, bestStreak:0, shots:[], drills:{}, days:{}, set:s };
     save();
   }
+  // Держим не больше 30 дней истории — иначе сохранение пухнет годами
+  function pruneDays(days){
+    var keys = Object.keys(days).sort();
+    while(keys.length > 30) delete days[keys.shift()];
+    return days;
+  }
+  function dayKey(ts){
+    var d = new Date(ts || Date.now());
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  // Итог раунда по упражнению и в копилку дня
+  function addRound(casts, hits){
+    var k = dayKey();
+    var day = data.days[k] || (data.days[k] = { c:0, h:0 });
+    day.c += casts; day.h += hits;
+    pruneDays(data.days);
+  }
+  function drillResult(id, progress, cleared, seconds){
+    var d = data.drills[id] || (data.drills[id] = { tries:0, cleared:false, best:0, time:0 });
+    d.tries++;
+    if(progress > d.best) d.best = progress;
+    if(cleared && !d.cleared){ d.cleared = true; d.time = Math.round(seconds || 0); }
+    return d;
+  }
   return { data:data, load:load, save:save, saveThrottled:saveThrottled, addXp:addXp, addShot:addShot,
-           reset:reset, xpForLevel:xpForLevel, isOk:function(){ return ok; } };
+           reset:reset, addRound:addRound, drillResult:drillResult, dayKey:dayKey,
+           xpForLevel:xpForLevel, isOk:function(){ return ok; } };
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1814,6 +1902,11 @@ var Game = {
   exort: CONFIG.strike.exortDefault,
   scepter:false, shard:false,
   cataclysmCd:-99,          // когда снова доступен Cataclysm
+  drillId:'free',           // текущее упражнение
+  drillProgress:0,          // сколько шагов цели уже сделано
+  drillDone:false,          // цель выполнена в этом раунде
+  drillDoneAt:0,            // на какой секунде раунда это случилось
+  drillNote:'',             // последняя подсказка упражнения
   vision: [],               // {x,y,r,until} — обзор от кастов (в доте 400 радиуса, 5.5 с)
   spirits: [],              // призванные Forge Spirit'ы: {unit, until}
   roundId:0
@@ -1847,6 +1940,7 @@ Game.reset = function(){
   this.vision.length = 0;
   this.spirits.length = 0;
   this.cataclysmCd = -99;
+  this.drillProgress = 0; this.drillDone = false; this.drillDoneAt = 0; this.drillNote = '';
   this.cataclysmCount = 0;      // сколько раз за раунд применён Cataclysm
   this.aimCastsN = 0;           // касты, наведённые рукой (без Cataclysm) — по ним считается точность
   this.aimHitsN = 0;
@@ -1866,19 +1960,30 @@ Game.start = function(diffId, dur, delay, set){
                      CONFIG.dota.exortMax);
   this.scepter = !!st.scepter;
   this.shard = !!st.shard;
+  // упражнение: свои правила (без волн, без вышек, туман, цель)
+  this.drillId = CONFIG.drills[st.drill] ? st.drill : CONFIG.strike.drillDefault;
+  this.drill = CONFIG.drills[this.drillId];
+  this.drillGoal = this.drill.goal ? this.drill.goal.count : 0;
+  this.forcedFog = !!this.drill.forceFog;
   this.roundId++;
   this.reset();
   this.state = 'playing';
-  // вышки обеих команд на концах каждой линии (как в доте)
-  for(var i=0;i<Lanes.length;i++){
-    this.spawnTower(TEAM.RADIANT, i);
-    this.spawnTower(TEAM.DIRE, i);
+  // вышки обеих команд на концах каждой линии (как в доте); в упражнении «Только герои» их нет
+  if(!this.drill.noTowers){
+    for(var i=0;i<Lanes.length;i++){
+      this.spawnTower(TEAM.RADIANT, i);
+      this.spawnTower(TEAM.DIRE, i);
+    }
   }
   // герои-цели (все враги — Dire)
   for(var h=0; h<this.diff.heroes; h++) this.spawnHero(h % Lanes.length);
   // первые волны крипов сразу, чтобы линия ожила
-  for(var L=0; L<Lanes.length; L++){ this.spawnWave(L, TEAM.RADIANT); this.spawnWave(L, TEAM.DIRE); }
-  this.nextWave = CONFIG.dota.firstWave;
+  if(!this.drill.noCreeps){
+    for(var L=0; L<Lanes.length; L++){ this.spawnWave(L, TEAM.RADIANT); this.spawnWave(L, TEAM.DIRE); }
+    this.nextWave = CONFIG.dota.firstWave;
+  } else {
+    this.nextWave = 1e9;                    // волны не приходят: целимся только по героям
+  }
   SFX.unlock();
   UI.showHud();
 };
@@ -2161,6 +2266,49 @@ Game.cataclysm = function(){
   return true;
 };
 
+// ── Упражнения: считаем шаги цели и закрываем её, когда набрано нужное ──
+Game.drillHit = function(c, hit, bestDist){
+  var d = this.drill;
+  if(!d || !d.goal || this.drillDone) return;
+  var g = d.goal, ok = false, why = '';
+  if(g.type === 'heroHits'){
+    ok = !!c.heroHit;
+  } else if(g.type === 'streak'){
+    ok = hit;                                  // серия считается по попаданиям подряд
+  } else if(g.type === 'centerHits'){
+    var lim = this.effectiveRadius() * (d.centerFrac || 0.35);
+    ok = hit && bestDist <= lim;
+    if(hit && !ok) why = 'неточно: до центра ' + Math.round(bestDist / S) + ' px, нужно ≤ ' + Math.round(lim / S);
+  }
+  if(!ok){
+    if(why && this.time - (this._noteAt || -9) > 2){
+      this._noteAt = this.time;
+      FX.addFloat(c.x, c.y - 78*S, why.toUpperCase(), '#ffc247', 12*S);
+    }
+    return;
+  }
+  this.drillProgress++;
+  if(this.drillProgress >= g.count){
+    this.drillDone = true;
+    this.drillDoneAt = this.time;
+    SFX.levelUp();
+    Ann.banner('УПРАЖНЕНИЕ ПРОЙДЕНО', d.name + ': ' + g.count + ' ' + g.label + ' за ' + Math.round(this.time) + ' с', '#9ee06a');
+    UI.toast('Упражнение пройдено: ' + d.name, true);
+    FX.addFloat(c.x, c.y - 96*S, 'ЦЕЛЬ!', '#9ee06a', 20*S);
+  } else if(this.drillProgress === 1 || this.drillProgress % 3 === 0){
+    UI.toast('Цель: ' + this.drillProgress + ' / ' + g.count + ' · ' + g.label, true);
+  }
+};
+// Промах в упражнении «Серия» обнуляет прогресс — показываем это отдельно
+Game.drillMiss = function(x, y){
+  var d = this.drill;
+  if(!d || this.drillDone) return;
+  if(d.goal && d.goal.type === 'streak' && this.drillProgress > 0){
+    FX.addFloat(x, y - 40*S, 'СЕРИЯ ОБНУЛЕНА', '#e2503a', 14*S);
+    this.drillProgress = 0;
+  }
+};
+
 // Разрешение каста: пришёл момент урона
 Game.resolveCast = function(c){
   var R = c.radius, i, u, d;
@@ -2196,6 +2344,13 @@ Game.resolveCast = function(c){
   var heroHit = false;
   for(i=0;i<covered.length;i++) if(covered[i].isHero) heroHit = true;
   if(heroHit) this.heroHitsN++;
+  c.heroHit = heroHit;                       // нужно упражнениям и подсказкам
+  var bestCovered = 1e9;                     // насколько близко к центру пришёлся ближайший
+  for(i=0;i<covered.length;i++){
+    var dd = len(covered[i].pos.x - c.x, covered[i].pos.y - c.y);
+    if(dd < bestCovered) bestCovered = dd;
+  }
+  if(!covered.length) bestCovered = bestD;
 
   FX.sunstrike(c.x, c.y, R);
   SFX.sunstrike(c.x, c.cataclysm ? 0.55 : 1);     // в Cataclysm удары приглушены, чтобы не перегружать
@@ -2245,6 +2400,7 @@ Game.resolveCast = function(c){
     if(c.cataclysm) { /* Cataclysm — не рука игрока: серию и точность не трогаем */ }
     else this.aimHitsN++;
     this.streak++;
+    if(!c.cataclysm) this.drillHit(c, true, bestCovered);    // страйки Cataclysm цель не двигают
     if(this.streak > this.bestStreak) this.bestStreak = this.streak;
     this.mult = Math.min(CONFIG.score.multMax, 1 + Math.floor(this.streak / CONFIG.score.multStep) * CONFIG.score.multStepVal);
     var target = covered[0];
@@ -2270,7 +2426,8 @@ Game.resolveCast = function(c){
     UI.flashStreak(this.streak);
   } else {
     SFX.miss(c.x);
-    if(!c.cataclysm){                       // промах автоматического Cataclysm серию игрока не обнуляет
+    if(!c.cataclysm){
+      this.drillMiss(c.x, c.y);             // в «Серии» промах обнуляет прогресс
       this.streak = 0; this.mult = 1;
       Ann.resetStreak(); Ann.resetMulti();
       this.multiCount = 0;
@@ -2445,6 +2602,12 @@ Game.endRound = function(){
   d.heroHits = (d.heroHits || 0) + this.heroHitsN;
   d.damage += this.damageDealt;
   var acc = this.castsN ? this.hitsN / this.castsN : 0;
+  // в копилку дня идут только касты, наведённые рукой (страйки Cataclysm точность не портят)
+  Save.addRound(this.aimCastsN, this.aimHitsN);
+  var drillRec = null;
+  if(this.drill && this.drill.goal){
+    drillRec = Save.drillResult(this.drillId, this.drillProgress, this.drillDone, this.drillDoneAt);
+  }
   var newAcc = acc > d.bestAcc;
   var newScore = this.score > d.bestScore;
   if(newAcc) d.bestAcc = acc;
@@ -2452,7 +2615,7 @@ Game.endRound = function(){
   if(this.bestStreak > d.bestStreak) d.bestStreak = this.bestStreak;
   Save.save();
   if(ups > 0) SFX.levelUp();
-  UI.showResults({ acc:acc, newAcc:newAcc, newScore:newScore, ups:ups, xpGain:xp });
+  UI.showResults({ acc:acc, newAcc:newAcc, newScore:newScore, ups:ups, xpGain:xp, drill:drillRec });
 };
 
 Game.stats = function(){
@@ -2733,7 +2896,7 @@ function buildFogCache(){
   g.fillRect(0,0,W,H);
 }
 function drawFog(){
-  var f = Game.diff.fog || 0;
+  var f = Game.forcedFog ? 1 : (Game.diff.fog || 0);   // упражнение «Туман войны» держит туман всегда
   if(f <= 0) return;
   if(Math.abs(f - 1) < 0.02){ ctx.drawImage(fogCache, 0, 0, W, H); return; }
   ctx.save();
@@ -3102,7 +3265,7 @@ function drawVision(time){
 
 // Враг вне обзора в тумане войны — рисуем приглушённо (как «не видно»)
 function fogDim(u){
-  if(!(Game.diff.fog > 0) || u.team !== TEAM.DIRE) return 1;
+  if(!(Game.forcedFog || Game.diff.fog > 0) || u.team !== TEAM.DIRE) return 1;
   return Game.visionAt(u.pos.x, u.pos.y) ? 1 : 0.42;
 }
 
@@ -3852,6 +4015,39 @@ function drawCursor(time){
   ctx.restore();
 }
 
+// ── Значок упражнения: что за цель и сколько до неё осталось ──
+function drawDrillBadge(){
+  var d = Game.drill;
+  if(!d || Game.state !== 'playing' || Game.countdownT > 0) return;
+  var g = d.goal;
+  var label = g ? (g.count + ' ' + g.label) : 'без цели';
+  var prog = g ? Math.min(Game.drillProgress, g.count) : 0;
+  var txt = 'УПРАЖНЕНИЕ · ' + d.name.toUpperCase() + ' — ' + label + (g ? ' · ' + prog + '/' + g.count : '');
+  ctx.save();
+  ctx.font = '700 ' + Math.max(10, Math.round(10*S + 2)) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  var tw = ctx.measureText(txt).width;
+  var x = W/2, y = Field.y - 22*S, bw2 = tw + (Game.drillDone ? 40 : 22);
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(x - bw2/2, y - 4, bw2, 21, 9);
+  else ctx.rect(x - bw2/2, y - 4, bw2, 21);
+  ctx.fillStyle = 'rgba(8,12,10,0.72)'; ctx.fill();
+  ctx.strokeStyle = Game.drillDone ? 'rgba(158,224,106,0.9)' : 'rgba(255,194,71,0.32)';
+  ctx.lineWidth = 1.2; ctx.stroke();
+  if(g){                                   // полоска прогресса внутри планки
+    ctx.beginPath();
+    ctx.rect(x - bw2/2 + 2, y + 13.5, (bw2 - 4) * clamp(prog/g.count, 0, 1), 2.5);
+    ctx.fillStyle = Game.drillDone ? 'rgba(158,224,106,0.95)' : 'rgba(255,194,71,0.8)';
+    ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(x - bw2/2 + 7, y + 6, 3.2, 0, TAU);
+  ctx.fillStyle = d.color; ctx.fill();
+  ctx.fillStyle = Game.drillDone ? '#9ee06a' : 'rgba(240,232,208,0.95)';
+  ctx.fillText(txt, x, y + 1);
+  if(Game.drillDone){ ctx.fillStyle = '#9ee06a'; ctx.fillText('✓', x + bw2/2 - 12, y + 1); }
+  ctx.restore();
+}
+
 // ── Отсчёт перед раундом ──
 function drawCountdown(){
   if(Game.countdownT <= 0) return;
@@ -4302,6 +4498,7 @@ function draw(time){
     ctx.fillRect(0,0,W,H);
   }
   drawCountdown();
+  drawDrillBadge();
   if(Game.state !== 'menu') drawHudPanel(time);
 
   if(Game.state === 'paused'){
@@ -4392,6 +4589,63 @@ var UI = (function(){
       (Save.data.set.shard ? ' · Forge Spirit' : '') + (Save.data.set.scepter ? ' · Cataclysm' : '');
   }
   // кнопки уровня ульта с точными дотерскими числами
+  // ── Упражнения: кнопки, подсказка, рекорды ──
+  function buildDrillButtons(){
+    var box = $('drillBox');
+    box.innerHTML = '';
+    Object.keys(CONFIG.drills).forEach(function(id){
+      var b = document.createElement('button');
+      b.className = 'diff'; b.type = 'button'; b.dataset.drill = id;
+      b.addEventListener('click', function(){ SFX.unlock(); SFX.ui(); setDrill(id); });
+      box.appendChild(b);
+    });
+    markDrill();
+  }
+  function drillRecord(id){
+    return Save.data.drills[id] || { tries:0, cleared:false, best:0, time:0 };
+  }
+  function markDrill(){
+    var box = $('drillBox'), cur = Save.data.set.drill, d = CONFIG.drills[cur] || CONFIG.drills.free;
+    for(var i=0;i<box.children.length;i++){
+      var b = box.children[i], id = b.dataset.drill, dd = CONFIG.drills[id], rec = drillRecord(id);
+      b.className = 'diff' + (id === cur ? ' sel' : '');
+      b.innerHTML = '<span class="dn" style="color:' + dd.color + '">' + dd.short +
+        (rec.cleared ? ' ✓' : '') + '</span>' +
+        '<span class="dd">' + dd.desc + '</span>' +
+        (dd.goal ? '<span class="dm">' + rec.best + '/' + dd.goal.count + '</span>' : '');
+    }
+    var r = drillRecord(cur);
+    $('drillHint').innerHTML = d.goal
+      ? '<b>' + d.name + ':</b> цель — <b>' + d.goal.count + ' ' + d.goal.label + '</b>. ' + d.desc +
+        (r.cleared ? ' · <b style="color:var(--toxic)">уже пройден' + (r.time ? ' за ' + r.time + ' с' : '') + '</b>' : '')
+      : '<b>' + d.name + '</b> — без цели: обычный раунд с волнами, вышками и героями.';
+    renderDrillStats();
+  }
+  function renderDrillStats(){
+    var html = '', any = false;
+    Object.keys(CONFIG.drills).forEach(function(id){
+      var d = CONFIG.drills[id];
+      if(!d.goal) return;
+      var rec = drillRecord(id);
+      any = true;
+      html += box(d.short, rec.tries
+        ? (rec.cleared ? '<b style="color:var(--toxic)">пройден</b> <small>' + rec.tries + ' поп.</small>'
+                       : 'лучший ' + rec.best + '/' + d.goal.count + ' <small>' + rec.tries + ' поп.</small>')
+        : '—');
+    });
+    $('drillStats').innerHTML = any ? html : box('упражнения', 'выбери цель выше');
+    drawProgress($('menuProg'));
+  }
+  function setDrill(id){
+    if(!CONFIG.drills[id]) return;
+    Save.data.set.drill = id;
+    Save.save();
+    markDrill();
+    var d = CONFIG.drills[id];
+    UI.toast('Упражнение: ' + d.name + (d.goal ? ' · цель ' + d.goal.count + ' ' + d.goal.label : ''), true);
+    if(Game.state === 'menu') startAmbient();
+  }
+
   function markUlt(){
     var set = Save.data.set, D = CONFIG.dota;
     // профили каста
@@ -4526,6 +4780,22 @@ var UI = (function(){
       (res.ups > 0 ? ' · <b style="color:var(--toxic)">НОВЫЙ УРОВЕНЬ ×' + res.ups + '</b>' : '');
     $('rRecords').innerHTML = 'Рекорды: точность <b>' + fmtPct(d.bestAcc) + '</b> · очки <b>' + d.bestScore +
       '</b> · стрик <b>' + d.bestStreak + '</b> · всего киллов <b>' + d.kills + '</b> из <b>' + d.casts + '</b> кастов';
+    // итог упражнения
+    var rd = $('rDrill');
+    if(res.drill && Game.drill && Game.drill.goal){
+      var g = Game.drill.goal, rec = res.drill;
+      var best = rec.best >= g.count;
+      rd.style.display = '';
+      $('rDrillTxt').innerHTML = '<b style="color:' + Game.drill.color + '">' + Game.drill.name + '</b> · цель ' +
+        g.count + ' ' + g.label + '<br>выполнено: <b>' + Game.drillProgress + ' / ' + g.count + '</b>' +
+        (Game.drillDone ? ' · <b style="color:var(--toxic)">пройдено за ' + Math.round(Game.drillDoneAt) + ' с</b>'
+                        : ' · <span style="color:var(--warn)">цель не закрыта</span>') +
+        '<br>рекорд: <b>' + rec.best + '/' + g.count + '</b> · попыток: ' + rec.tries +
+        (rec.cleared ? ' · <b style="color:var(--toxic)">упражнение пройдено' + (rec.time ? ' за ' + rec.time + ' с' : '') + '</b>' : '') +
+        (!best && Game.drillId === 'streak' ? '<br><span class="tiny">в «Серии» промах обнуляет прогресс — держи ровно</span>' : '');
+    } else {
+      rd.style.display = 'none';
+    }
     $('rVerdict').innerHTML = heatVerdictHTML(d.shots);
     show('results');
     // графики рисуем после показа, когда у канвасов есть размеры
@@ -4541,11 +4811,13 @@ var UI = (function(){
     drawHeatmap($('menuMap'));
     markDifficulty(Save.data.set.diff);
     markUlt();
+    markDrill();
   }
   function showPause(){ show('pause'); }
 
   return { show:show, showHud:showHud, hideHud:hideHud, syncHud:syncHud, toast:toast, castFx:castFx,
-           markUlt:markUlt,
+           markUlt:markUlt, markDrill:markDrill, buildDrillButtons:buildDrillButtons,
+           renderDrillStats:renderDrillStats,
            buildDifficultyButtons:buildDifficultyButtons, markDifficulty:markDifficulty,
            buildDurationSelect:buildDurationSelect, renderMenuStats:renderMenuStats,
            showResults:showResults, showMenu:showMenu, showPause:showPause, flashStreak:flashStreak };
@@ -4607,6 +4879,70 @@ function setupChartCanvas(cv, cssH){
   c.setTransform(cdp, 0, 0, cdp, 0, 0);
   c.clearRect(0, 0, cw, cssH);
   return { ctx:c, w:cw, h:cssH };
+}
+
+// ── Прогресс по дням: столбики точности + число кастов ──
+function drawProgress(cv){
+  var cw = Math.max(140, cv.clientWidth || 320);
+  var ch = parseInt(cv.style.height, 10) || 140;
+  var o = setupChartCanvas(cv, ch), c = o.ctx, w = o.w, h = o.h;
+  c.fillStyle = 'rgba(10,14,11,0.9)';
+  c.fillRect(0, 0, w, h);
+  var days = Save.data.days || {};
+  var keys = Object.keys(days).sort().slice(-14);          // последние две недели
+  var padL = 30, padR = 8, padT = 10, padB = 18;
+  var plotW = w - padL - padR, plotH = h - padT - padB;
+
+  if(!keys.length){
+    c.fillStyle = 'rgba(156,150,131,0.9)';
+    c.font = '11px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('Отыграй раунд — здесь появится прогресс по дням', w/2, h/2);
+    return;
+  }
+  var maxC = 1, bestAcc = 0;
+  for(var i=0;i<keys.length;i++){
+    var dd = days[keys[i]];
+    if(dd.c > maxC) maxC = dd.c;
+    var a = dd.c ? dd.h/dd.c : 0;
+    if(a > bestAcc) bestAcc = a;
+  }
+  // сетка
+  c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 1;
+  c.font = '9px system-ui, sans-serif'; c.fillStyle = 'rgba(156,150,131,0.9)';
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  for(var g=0; g<=2; g++){
+    var y = padT + plotH * g/2;
+    c.beginPath(); c.moveTo(padL, y); c.lineTo(w-padR, y); c.stroke();
+    c.fillText(Math.round(100 - g*50) + '%', padL - 4, y);
+  }
+  var step = plotW / keys.length;
+  var bw = Math.max(3, Math.min(14, step * 0.44));
+  var bestIdx = -1;
+  for(var k2=0; k2<keys.length; k2++){
+    var day = days[keys[k2]];
+    var acc = day.c ? day.h/day.c : 0;
+    if(acc >= bestAcc && bestAcc > 0 && bestIdx < 0) bestIdx = k2;
+  }
+  for(var j=0;j<keys.length;j++){
+    var d2 = days[keys[j]], a2 = d2.c ? d2.h/d2.c : 0;
+    var x = padL + step * (j + 0.5);
+    var bhh = Math.max(1, a2 * plotH);
+    var isBest = (a2 >= bestAcc && bestAcc > 0);
+    c.fillStyle = isBest ? 'rgba(255,194,71,0.85)' : 'rgba(127,195,90,0.75)';
+    c.fillRect(x - bw/2, padT + plotH - bhh, bw, bhh);
+    // число кастов — тонкой полоской справа
+    var chh = (d2.c / maxC) * plotH * 0.32;
+    c.fillStyle = 'rgba(226,80,58,0.55)';
+    c.fillRect(x + bw/2 + 1, padT + plotH - chh, Math.max(2, bw*0.35), chh);
+    if(j % 2 === 0 || keys.length <= 8){
+      c.fillStyle = 'rgba(156,150,131,0.9)';
+      c.textAlign = 'center'; c.textBaseline = 'top';
+      c.fillText(keys[j].slice(5).replace('-', '.'), x, padT + plotH + 4);
+    }
+  }
+  c.fillStyle = 'rgba(255,194,71,0.95)';
+  c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('лучший день: ' + Math.round(bestAcc*100) + '%', padL + 2, 1);
 }
 
 // Хитмап: облако смещений (along=по курсу, perp=бок) за всю историю
@@ -4787,6 +5123,8 @@ function startAmbient(){
                      CONFIG.dota.exortMax);
   Game.scepter = !!Save.data.set.scepter;
   Game.shard = !!Save.data.set.shard;
+  Game.drill = CONFIG.drills[Save.data.set.drill] || CONFIG.drills.free;
+  Game.forcedFog = !!Game.drill.forceFog;      // фон меню тоже уважает выбранное упражнение
   Game.reset();
   Game.countdownT = 0;
   for(var i=0;i<Lanes.length;i++){
@@ -4976,6 +5314,7 @@ function setShard(on){
 }
 // ── Кнопки меню/экранов ──
 UI.buildDifficultyButtons(pickDifficulty);
+UI.buildDrillButtons();
 UI.buildDurationSelect();
 (function wire(){
   $('bStart').addEventListener('click', function(){ SFX.unlock(); SFX.ui(); restartRound(); });
