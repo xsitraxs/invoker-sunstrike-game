@@ -126,6 +126,21 @@ h2.sec{
   position:absolute; top:5px; right:7px; font-size:9px; color:var(--gold-dim);
   border:1px solid rgba(255,194,71,.3); border-radius:4px; padding:0 3px;
 }
+.ults{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+@media (max-width:520px){ .ults{grid-template-columns:repeat(2,1fr)} }
+.ult{
+  text-align:left; padding:7px 9px; border-radius:9px; cursor:pointer; font-family:var(--font);
+  background:linear-gradient(180deg, rgba(58,42,22,.6), rgba(24,18,12,.7));
+  border:1px solid rgba(255,255,255,.08); color:var(--text);
+  transition:border-color .12s, transform .08s, box-shadow .12s;
+}
+.ult:hover{border-color:rgba(255,194,71,.5)}
+.ult:active{transform:scale(.98)}
+.ult.sel{border-color:var(--gold); box-shadow:0 0 0 1px rgba(255,194,71,.35), 0 0 18px rgba(255,122,26,.16) inset}
+.ult .un{font-weight:700; font-size:13px; color:var(--gold); display:block}
+.ult .ud{font-size:9.5px; color:var(--text-dim); line-height:1.25; display:block; margin-top:2px}
+label.toggle{display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:var(--text)}
+label.toggle input{accent-color:var(--gold); width:14px; height:14px}
 button.btn{
   font-family:var(--font); font-size:13px; font-weight:600; letter-spacing:.04em;
   padding:9px 14px; border-radius:9px; cursor:pointer; color:var(--text);
@@ -208,10 +223,11 @@ kbd{
   <div class="stat timer" id="hTimer"><span class="k">время</span><span class="v">60.0</span></div>
   <div class="stat"><span class="k">касты</span><span class="v" id="hCasts">0</span></div>
   <div class="stat"><span class="k">хиты</span><span class="v" id="hHits">0</span></div>
-  <div class="stat acc"><span class="k">точность</span><span class="v" id="hAcc">0%</span></div>
+  <div class="stat acc"><span class="k">точн. всего/гер.</span><span class="v" id="hAcc">0%</span></div>
   <div class="stat streak"><span class="k">стрик</span><span class="v" id="hStreak">0</span></div>
   <div class="stat opt"><span class="k">ср. промах</span><span class="v" id="hMiss">—</span></div>
-  <div class="stat opt"><span class="k">киллы</span><span class="v" id="hKills">0</span></div>
+  <div class="stat opt"><span class="k">убийств</span><span class="v" id="hKills">0</span></div>
+  <div class="stat opt"><span class="k">урон ульты</span><span class="v" id="hDmg">0</span></div>
   <div class="stat opt"><span class="k">очки</span><span class="v" id="hScore">0</span></div>
   <div class="grow"></div>
   <div class="buttons">
@@ -229,6 +245,24 @@ kbd{
     <h2 class="sec">Сложность <span class="tiny">(клавиши 1–4)</span></h2>
     <div class="diffs" id="diffBox"></div>
     <p class="tiny" id="diffHint" style="margin-top:7px"></p>
+
+    <h2 class="sec">Sun Strike — уровень ульта (радиус и урон как в доте)</h2>
+    <div class="ults" id="ultBox"></div>
+    <div class="row" style="margin-top:7px">
+      <label class="chip toggle" title="Радиус 425 единиц — как с Агани́мом">
+        <input type="checkbox" id="cbAghanim"> Агани́м (радиус 425 ед.)
+      </label>
+      <label class="chip toggle">
+        <input type="checkbox" id="cbVoice"> Голос аннонсера
+      </label>
+      <label class="chip toggle">
+        <input type="checkbox" id="cbStings"> Стингеры стриков
+      </label>
+      <label class="chip toggle" title="Выключено: попадание всегда убивает (тренажёр). Включено: HP и урон как в доте">
+        <input type="checkbox" id="cbDotaHp"> Дотерские HP: ульта не добивает с одного удара
+      </label>
+    </div>
+    <p class="tiny" id="ultHint" style="margin-top:6px"></p>
 
     <h2 class="sec">Параметры раунда</h2>
     <div class="row">
@@ -349,39 +383,102 @@ var CONFIG = {
   // ──────── Раунд ────────
   roundOptions: [30, 60, 120],   // варианты длительности раунда, сек
   roundDefault: 60,              // длительность по умолчанию, сек
-  countdown: 2.2,                // отсчёт перед стартом раунда, сек (2.2 → готовься)
-  restartDelay: 0.85,            // пауза перед респавном убитого юнита, сек
+  countdown: 2.2,                // отсчёт перед стартом раунда, сек
+  restartDelay: 1.0,             // пауза перед респавном убитого героя, сек (как у героя в доте)
   postRound: 0.5,                // задержка перед показом итогов, сек
 
-  // ──────── Sun Strike ────────
+  // ══════════════════════════════════════════════════════════════════════
+  //  DOTА-КОНСТАНТЫ: Sun Strike и боевые юниты — как в Dota 2.
+  //  Радиус/урон/задержка взяты из игры, HP и урон крипов — тоже.
+  //  Темп движения сжат под размер арены (в доте линии в 6 раз длиннее),
+  //  но соотношение «радиус ульты : размер героя» держим дотерским.
+  // ══════════════════════════════════════════════════════════════════════
+  dota: {
+    unitPx: 0,                   // px на 1 юнит мира дота, считается от радиуса героя (см. rebuildScales)
+    heroRadiusUnits: 24,         // радиус героя в юнитах доты — база для пересчёта размеров
+
+    // ── Sun Strike ──
+    radiusUnits: [175, 200, 225, 250],   // радиус по уровням ульта: Sun Strike 1/2/3/4
+    radiusScepterUnits: 425,             // Aghanim's Scepter: радиус как в доте
+    damage: [200, 250, 300, 350],        // урон по уровням (в доте — чистый урон)
+    scepterDamageBonus: 100,             // Scepter: прибавка к урону (по мотивам патчей)
+    delayBase: 1.7,                      // задержка урона, сек — 1.7 с, как в доте
+    buildingsImmune: true,               // строения не получают урон от Sun Strike (как в доте)
+    friendlyFire: false,                 // союзников не бьёт (как в доте)
+    aoeHullFactor: 0.25,                 // доля радиуса цели, добавляемая к зоне (смягчение проверки)
+
+    // ── Крипы линии (lane creeps) ──
+    creepHp: { melee: 550, ranged: 300 },  // HP как в доте (250? нет: меле 550, рендж 300)
+    creepDmg: { melee: 22, ranged: 26 },   // урон за удар
+    creepAtkInterval: 1.0,                 // интервал атаки, сек
+    creepRange: { melee: 42, ranged: 190 },// дистанция атаки, дизайн-px (сжата под арену)
+    creepAggro: { melee: 165, ranged: 235 },// радиус агрессии, дизайн-px
+    creepSpeed: { melee: 88, ranged: 82 }, // скорость крипов, дизайн-px/сек
+    creepBounty: 4,                        // XP за добитого крипа
+
+    // ── Герои (цели тренировки) ──
+    heroHp: 900,                 // HP героя — Sun Strike НЕ убивает с одного попадания (как в доте)
+    heroDmg: 60,                 // урон героя
+    heroAtkInterval: 1.1,        // интервал атаки, сек
+    heroRange: 70,               // дистанция атаки, дизайн-px
+    heroAggro: 105,              // радиус агрессии героя (специально мал: герой должен БЕГАТЬ)
+    // Скорость героя подобрана по пропорции доты: за 1.7 с задержки герой
+    // проходит примерно два радиуса Sun Strike, поэтому без упреждения не попасть.
+    heroSpeed: 200,              // скорость героя на «Норме» (множитель — в DIFFICULTIES)
+
+    // ── Вышки ──
+    towerHp: 1200,               // HP вышки (в доте T1 = 1800, тут снижено, чтобы башня падала за раунд)
+    towerDmg: 62,                // урон вышки
+    towerAtkInterval: 1.0,       // интервал выстрела, сек
+    towerRange: 250,             // радиус обстрела, дизайн-px
+    towerRadius: 27,             // размер вышки (радиус основания)
+    towerRespawn: 18,            // через сколько сек вышка восстанавливается, сек
+    creepVsBuildingMul: 2.6,     // крипы бьют строения сильнее — иначе башня не падает за раунд
+    towerKillXp: 60,             // XP за снесённую вышку
+    towerKillScore: 250,         // очки за снесённую вышку (в зачёт битвы линий)
+
+    // ── Волны крипов ──
+    waveMelee: 3,                // 3 меле-крипа в волне (как в доте)
+    waveRanged: 1,               // 1 рендж-крип в волне
+    waveInterval: 15,            // интервал между волнами, сек (в доте 30, тут сжато темпом)
+    firstWave: 2.5,              // первая волна через N сек после начала раунда
+    maxUnits: 46,                // жёсткий лимит юнитов на карте (перф)
+    corpseTime: 2.6,             // сколько лежит трупик, сек
+    oneShotOnHit: true,          // ПРЯМОЕ ПОПАДАНИЕ = КИЛЛ (тренажёр: нужна внятная обратная связь).
+                                 // Выключается в меню: тогда HP и урон строго как в доте и
+                                 // ульта убивает только добитых крипов и не добивает героев
+  },
+
+  // ──────── Sun Strike: тренировочная механика ────────
   strike: {
-    delayDefault: 1.7,           // ЗАДЕРЖКА УРОНА, сек. Главный параметр тренировки (как в доте)
+    delayDefault: 1.7,           // ЗАДЕРЖКА УРОНА, сек (главный параметр тренировки)
     delayMin: 1.0,               // минимум слайдера, сек
     delayMax: 2.5,               // максимум слайдера, сек
-    radius: 92,                  // радиус зоны поражения в дизайн-px
-    hitboxMul: 1.08,             // множитель хитбокса (1.0 = ровно радиус; >1 добавляет прощения)
-    damage: 900,                 // урон: крипы и герои умирают с одного прямого попадания
+    ultLevelDefault: 3,          // уровень ульта по умолчанию (радиус/урон как в доте)
+    aghanimDefault: false,       // Aghanim's Scepter по умолчанию
     castAnim: 0.30,              // длительность визуальной анимации каста, сек
-    castCooldown: 0.35,          // КД между кастами, сек (защита от спама и двойных тапов)
+    castCooldown: 0.35,          // КД между кастами, сек (в тренажёре каст частый)
     explodeTime: 0.55,           // сколько живёт столб света, сек
+    scorchTime: 6.0,             // сколько тлеет выжженная земля после удара, сек
     revealTime: 1.0,             // сколько висит разбор каста (метки + вектор ошибки), сек
     fuseWobble: 0.085,           // амплитуда «кипения» маркера (доля радиуса)
     fusePoints: 44,              // число точек в волнистой кромке маркера
-    maxActive: 6,                // максимум одновременных маркеров (защита от просадок FPS)
-    beamWidthMul: 1.35,          // ширина столба света у земли (в радиусах зоны)
-    beamTopMul: 2.2,             // ширина столба у верхней кромки (свет расширяется кверху)
-    beamDarken: 0.5              // насколько столб затемняет остальной экран (0 = не затемнять)
+    maxActive: 6,                // максимум одновременных маркеров
+    beamWidthMul: 1.15,          // ширина столба света у земли (в радиусах зоны)
+    beamTopMul: 2.1,             // ширина столба у верхней кромки
+    beamDarken: 0.5,             // насколько столб затемняет остальной экран
+    manaMax: 400,                // мана для полосы HUD (каст в тренажёре не ограничен)
+    manaCost: 175,               // стоимость Sun Strike в доте
+    manaRegen: 320               // визуальный реген маны, ед/сек
   },
 
-  // ──────── Юниты ────────
+  // ──────── Юниты: поведение и размеры ────────
   unit: {
-    creepHp: 320,                // HP крипа
-    heroHp: 640,                 // HP героя
     creepR: 13,                  // радиус тела крипа, дизайн-px
-    heroR: 17,                   // радиус тела героя, дизайн-px
-    speedJitter: 0.10,           // разброс скорости юнита (±10%), чтобы цели не были клонами
+    heroR: 17,                   // радиус тела героя, дизайн-px (от него считается масштаб доты)
+    speedJitter: 0.10,           // разброс скорости цели (±10%)
     accel: 6.0,                  // плавность разгона/торможения (больше = резче)
-    jukeSpeedMul: 1.0,           // множитель скорости во время juke-рывка в бок
+    jukeSpeedMul: 1.0,           // множитель скорости во время джука
     jukeTime: [0.30, 0.62],      // длительность бокового ухода, сек
     pauseTime: [0.5, 1.0],       // сколько герой стоит на месте, сек
     dashTime: [0.45, 0.8],       // длительность рывка, сек
@@ -389,64 +486,101 @@ var CONFIG = {
     blinkCd: [2.4, 4.6],         // перезарядка блинка, сек
     stutterOn: [0.10, 0.20],     // микро-шаг при stutter-step, сек
     stutterOff: [0.06, 0.14],    // микро-пауза при stutter-step, сек
-    respawnJitter: [0.0, 3.2]    // разброс задержки респавна, сек
+    respawnJitter: [0.0, 3.2],   // разброс задержки респавна героя, сек
+    swingTime: 0.22,             // длительность анимации удара, сек
+    projSpeed: 520               // скорость снаряда рендж-атаки, дизайн-px/сек
   },
 
   // ──────── Дорожки (waypoint-ломаные) ────────
   lanes: {
-    count: 3,                    // число дорожек (2–3 по ТЗ)
-    yFrac: [0.20, 0.50, 0.80],   // где проходят дорожки внутри игрового поля
+    count: 3,                    // число линий (как в доте: top / mid / bot)
+    yFrac: [0.20, 0.50, 0.80],   // где проходят линии внутри игрового поля
     xFrac: [0.04, 0.36, 0.66, 0.96], // узлы по X внутри поля
     wiggle: 26,                  // разброс Y узлов, дизайн-px
-    roadWidth: 26,               // ширина протоптанной дорожки на земле, дизайн-px
-    minGap: 90                   // минимальная дистанция между целями на одной дорожке, дизайн-px
+    roadWidth: 26,               // ширина протоптанной линии на земле, дизайн-px
+    minGap: 90                   // минимальная дистанция между юнитами, дизайн-px
   },
 
   // ──────── Игровое поле ────────
   field: {
     padX: 6,                     // отступ поля от краёв экрана, дизайн-px
     topOffset: 46,               // отступ сверху под HUD, дизайн-px
-    bottomOffset: 10,            // отступ снизу, дизайн-px
+    bottomOffset: 96,            // отступ снизу под дотерскую панель (портрет/абилки)
     maxAspect: 1.9,              // в портрете поле не растягивается выше (высота ≤ ширина×это)
-    border: true                 // рисовать рамку тренировочного полигона
-  },
-
-  // ──────── Аналитика / счёт ────────
-  score: {
-    base: 120,                   // очки за чистое попадание
-    speedBonus: 130,             // максимум бонуса за скорость цели
-    speedRef: 150,               // скорость, при которой бонус максимален, дизайн-px/сек
-    centreBonus: 60,             // бонус за попадание точно в центр (ошибка < 20% радиуса)
-    multStep: 3,                 // каждые N попаданий подряд множитель растёт
-    multStepVal: 0.5,            // прибавка к множителю за шаг
-    multMax: 3.0,                // максимум множителя
-    xpPerKill: 12,               // XP за килл
-    xpPerHit: 8,                 // дополнительный XP за чистый хит (без промаха)
-    xpPerRound: 20,              // XP за завершённый раунд
-    levelBase: 140,              // XP на 2-й уровень
-    levelPow: 1.32               // степень кривой уровней
+    border: true                 // рисовать рамку полигона
   },
 
   // ──────── Подсказка упреждения (тренажёрная «линейка») ────────
   guide: {
     on: true,                    // рисовать линию курса цели и подсказку упреждения
     leadLine: 80,                // длина пунктира «где цель будет через задержку», дизайн-px
-    pickRadius: 150,             // в каком радиусе от курсора искать цель для подсказки, дизайн-px
-    showMs: true                 // показывать остаток запала в мс у маркера
+    pickRadius: 170,             // в каком радиусе от курсора искать цель, дизайн-px
+    showMs: true,                // показывать остаток запала в мс у маркера
+    hpBars: true                 // полоски HP над юнитами
+  },
+
+  // ──────── Счёт / аналитика ────────
+  score: {
+    base: 120,                   // очки за чистое попадание
+    speedBonus: 130,             // максимум бонуса за скорость цели
+    speedRef: 150,               // скорость, при которой бонус максимален, дизайн-px/сек
+    centreBonus: 60,             // бонус за попадание точно в центр (ошибка < 20% радиуса)
+    lastHitBonus: 30,            // бонус за добивание цели ультой
+    multStep: 3,                 // каждые N киллов подряд множитель растёт
+    multStepVal: 0.5,            // прибавка к множителю за шаг
+    multMax: 3.0,                // максимум множителя
+    xpPerKill: 12,               // XP за убийство ультой
+    xpPerHit: 8,                 // XP за чистое попадание
+    xpPerDamage: 0.02,           // XP за единицу урона
+    xpPerRound: 20,              // XP за завершённый раунд
+    levelBase: 140,              // XP на 2-й уровень
+    levelPow: 1.32               // степень кривой уровней
+  },
+
+  // ──────── Аннонсер (стрики и мультикиллы, как в доте) ────────
+  ann: {
+    voice: true,                 // Web Speech API: произносить фразы аннонсера
+    stings: true,                // синтезированные музыкальные стингеры
+    bannerTime: 2.4,             // сколько висит крупная надпись, сек
+    // пороги киллов подряд — как в доте
+    streakSteps: [
+      {n:3,  ru:'УБИЙСТВЕННАЯ СЕРИЯ', en:'Killing Spree',  sting:1},
+      {n:4,  ru:'ДОМИНИРОВАНИЕ',      en:'Dominating',     sting:2},
+      {n:5,  ru:'МЕГА-УБИЙСТВО',      en:'Mega Kill',      sting:3},
+      {n:6,  ru:'НЕОСТАНОВИМЫЙ',      en:'Unstoppable',    sting:4},
+      {n:7,  ru:'ЖЕСТОЧАЙШЕ',         en:'Wicked Sick',    sting:5},
+      {n:8,  ru:'УБИЙСТВО МОНСТРА',   en:'Monster Kill',   sting:6},
+      {n:9,  ru:'БОЖЕСТВЕННО',        en:'Godlike',        sting:7},
+      {n:10, ru:'СВЕРХБОЖЕСТВЕННО',   en:'Beyond Godlike', sting:8}
+    ],
+    // мультикиллы: за одно попадание или в окне 18 с (как в доте)
+    multiWindow: 18,
+    multiSteps: [
+      {n:2, ru:'ДВОЙНОЕ УБИЙСТВО', en:'Double Kill', sting:1},
+      {n:3, ru:'ТРОЙНОЕ УБИЙСТВО', en:'Triple Kill', sting:3},
+      {n:4, ru:'УЛЬТРА-УБИЙСТВО',  en:'Ultra Kill',  sting:5},
+      {n:5, ru:'РАМПАГА',          en:'Rampage',     sting:7}
+    ]
   },
 
   // ──────── Визуал / ФПС ────────
   fx: {
-    dprMax: (/Mobi|Android|iPhone|iPad/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '')
-             ? 1.5 : 2),            // ограничение devicePixelRatio: на телефонах ниже ради FPS
-    maxParticles: 260,           // жёсткий лимит частиц
-    maxRings: 26,                // лимит ударных волн (каждая — дорогая эллипс-обводка)
+    dprMax: (typeof MOBILE !== 'undefined' && MOBILE ? 1.25 : 2),  // dpr: на телефонах ниже ради FPS
+    treesMobile: 26,             // деревьев на телефоне (на десктопе — CONFIG.fx.trees)
+    rocksMobile: 14,             // камней на телефоне
+    maxParticles: 300,           // жёсткий лимит частиц
+    maxRings: 26,                // лимит ударных волн
+    maxProjectiles: 40,          // лимит снарядов рендж-атак
+    maxDecals: 14,               // лимит выжженных пятен на земле
+    maxCorpses: 22,              // лимит трупиков
     shakeMul: 1.0,               // множитель тряски экрана
     shakeDecay: 7.5,             // затухание тряски, 1/сек
     flashDecay: 4.2,             // затухание вспышки, 1/сек
-    trailLen: 9,                 // длина следa юнита (точек)
+    trailLen: 9,                 // длина следа юнита (точек)
     reviewGhost: true,           // показывать, где цель была в момент каста
-    unitLabels: true             // подписывать цели (КРИП / ГЕРОЙ / БЛИНК и т.п.)
+    unitLabels: true,            // подписывать цели
+    trees: 46,                   // сколько деревьев в декоре
+    rocks: 26                    // сколько камней в декоре
   },
 
   // ──────── Хитмап ────────
@@ -457,29 +591,32 @@ var CONFIG = {
 };
 
 // ──────── Сложности ────────
-// speed — базовая скорость цели в дизайн-px/сек, chance — вероятности поведений за событие.
+// Сложность определяет ЦЕЛИ и обстановку (скорость, джуки, блинки, волны, туман),
+// а не размер ульты: радиус/урон Sun Strike честно берутся из уровня ульта (ULVL).
 var DIFFICULTIES = {
   1: { id:1, name:'Разминка', tag:'WARMUP', color:'#7fc35a',
-       desc:'Только крипы. Прямые траектории, медленно. Прочувствуй свои 1.7 с.',
-       count:2, heroes:0, speed:60, juke:0, jukeEvery:[9,9], pauseChance:0, dash:0, blink:false,
-       blinkEvery:[9,9], stutter:false, radiusMul:1.18, fog:0, cooldownMul:1.0 },
+       desc:'Спокойная линия: крипы идут волнами, героев нет. Ульта 4 уровня — зона как в доте.',
+       heroes:0, heroSpeedMul:0.85, ultLevel:4, juke:0, jukeEvery:[9,9], pauseChance:0, dash:0, blink:false,
+       blinkEvery:[9,9], stutter:false, fog:0, waveMul:1.5, waveMelee:2, waveRanged:1 },
   2: { id:2, name:'Норма', tag:'NORMAL', color:'#ffc247',
-       desc:'2 героя + крип. Джуки, остановки, средняя скорость.',
-       count:3, heroes:0.67, speed:96, juke:0.42, jukeEvery:[1.6,3.0], pauseChance:0.22, dash:0.16,
-       blink:false, blinkEvery:[9,9], stutter:false, radiusMul:1.0, fog:0, cooldownMul:1.0 },
+       desc:'Два героя в линиях: джуки, остановки, рывки. Ульта 3 уровня.',
+       heroes:2, heroSpeedMul:1.0, ultLevel:3, juke:0.42, jukeEvery:[1.6,3.0], pauseChance:0.22, dash:0.16,
+       blink:false, blinkEvery:[9,9], stutter:false, fog:0, waveMul:1.0, waveMelee:3, waveRanged:1 },
   3: { id:3, name:'Хард', tag:'HARD', color:'#ff7a1a',
-       desc:'Быстрые герои, резкие смены курса, края карты в тумане войны.',
-       count:3, heroes:1.0, speed:130, juke:0.58, jukeEvery:[1.0,2.1], pauseChance:0.28, dash:0.34,
-       blink:false, blinkEvery:[9,9], stutter:false, radiusMul:0.92, fog:0.62, cooldownMul:1.0 },
+       desc:'Быстрые герои, частые смены курса, края карты в тумане войны. Ульта 2 уровня.',
+       heroes:3, heroSpeedMul:1.35, ultLevel:2, juke:0.58, jukeEvery:[1.0,2.1], pauseChance:0.28, dash:0.34,
+       blink:false, blinkEvery:[9,9], stutter:false, fog:0.62, waveMul:0.85, waveMelee:3, waveRanged:1 },
   4: { id:4, name:'Insane', tag:'INSANE', color:'#e2503a',
-       desc:'Три цели: stutter-step, блинки на ~300 px, постоянные джуки. Боль и страдания.',
-       count:3, heroes:1.0, speed:172, juke:0.6, jukeEvery:[0.7,1.5], pauseChance:0.22, dash:0.4,
-       blink:true, blinkEvery:[2.2,4.2], blinkDist:300, stutter:true, radiusMul:0.86, fog:0.55, cooldownMul:1.0 }
+       desc:'Три злых героя: stutter-step, блинки, джуки. Ульта 1 уровня — самая узкая зона.',
+       heroes:3, heroSpeedMul:1.75, ultLevel:1, juke:0.6, jukeEvery:[0.7,1.5], pauseChance:0.22, dash:0.4,
+       blink:true, blinkEvery:[2.2,4.2], blinkDist:300, stutter:true, fog:0.55, waveMul:0.75,
+       waveMelee:3, waveRanged:1 }
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  2. Утилиты
 // ══════════════════════════════════════════════════════════════════════════════
+var MOBILE = (typeof navigator !== 'undefined') && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 var TAU = Math.PI * 2;
 function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
 function lerp(a,b,t){ return a + (b-a)*t; }
@@ -505,10 +642,12 @@ var Save = (function(){
   var ok = true;
   var data = {
     xp:0, level:1,
-    kills:0, casts:0, hits:0, rounds:0,
+    kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
     bestAcc:0, bestScore:0, bestStreak:0,
     shots:[],                                  // {a: along, p: perp, h: 0/1} — для хитмапа
-    set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false }
+    set:{ diff:2, dur:CONFIG.roundDefault, delay:CONFIG.strike.delayDefault, mute:false,
+          ultLevel:CONFIG.strike.ultLevelDefault, aghanim:CONFIG.strike.aghanimDefault,
+          annVoice:true, annStings:true, dotaHp:!CONFIG.dota.oneShotOnHit }
   };
   function load(){
     try{
@@ -526,6 +665,12 @@ var Save = (function(){
     data.set.diff = DIFFICULTIES[data.set.diff] ? data.set.diff : 2;
     data.set.dur = CONFIG.roundOptions.indexOf(data.set.dur) >= 0 ? data.set.dur : CONFIG.roundDefault;
     data.set.delay = clamp(Number(data.set.delay) || CONFIG.strike.delayDefault, CONFIG.strike.delayMin, CONFIG.strike.delayMax);
+    data.set.ultLevel = clamp(parseInt(data.set.ultLevel, 10) || CONFIG.strike.ultLevelDefault, 1, 4);
+    data.set.aghanim = !!data.set.aghanim;
+    if(data.set.annVoice === undefined) data.set.annVoice = true;
+    if(data.set.annStings === undefined) data.set.annStings = true;
+    if(data.set.dotaHp === undefined) data.set.dotaHp = !CONFIG.dota.oneShotOnHit;
+    data.damage = Number(data.damage) || 0;
     data.level = Math.max(1, data.level|0);
     return data;
   }
@@ -554,8 +699,8 @@ var Save = (function(){
   }
   function reset(){
     var s = data.set;
-    data = { xp:0, level:1, kills:0, casts:0, hits:0, rounds:0, bestAcc:0, bestScore:0, bestStreak:0,
-             shots:[], set:s };
+    data = { xp:0, level:1, kills:0, casts:0, hits:0, heroHits:0, rounds:0, damage:0,
+             bestAcc:0, bestScore:0, bestStreak:0, shots:[], set:s };
     save();
   }
   return { data:data, load:load, save:save, saveThrottled:saveThrottled, addXp:addXp, addShot:addShot,
@@ -576,7 +721,6 @@ var SFX = (function(){
       master = ctx.createGain();
       master.gain.value = 0.7;
       master.connect(ctx.destination);
-      // общий буфер белого шума для «вшух»/взрывов
       var n = ctx.sampleRate * 1.0, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
       for(var i=0;i<n;i++) d[i] = Math.random()*2 - 1;
       noiseBuf = b;
@@ -592,7 +736,6 @@ var SFX = (function(){
     g.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a);
     g.exponentialRampToValueAtTime(0.0001, t + a + d);
   }
-  // Тон с частотным свипом
   function tone(o){
     if(!enabled || !init() || !ctx) return;
     var t = now() + (o.at || 0);
@@ -604,12 +747,10 @@ var SFX = (function(){
     osc.connect(g); g.connect(master);
     osc.start(t); osc.stop(t + (o.a||0.005) + o.dur + 0.05);
   }
-  // Шумовой всплеск с фильтром
   function noise(o){
     if(!enabled || !init() || !ctx) return;
     var t = now() + (o.at || 0);
-    var src = ctx.createBufferSource(); src.buffer = noiseBuf;
-    src.loop = true;
+    var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     var flt = ctx.createBiquadFilter();
     flt.type = o.filter || 'bandpass';
     flt.frequency.setValueAtTime(o.f0, t);
@@ -624,51 +765,167 @@ var SFX = (function(){
     unlock:function(){ init(); resume(); },
     setEnabled:function(v){ enabled = v; if(master) master.gain.value = v ? 0.7 : 0.0; },
     isEnabled:function(){ return enabled; },
-    // каст: короткий свист + восходящий блип
+
+    // Каст: короткий свист + восходящий блип (Инвокер «инвочит»)
     cast:function(){
-      noise({f0:420, f1:2600, dur:0.22, vol:0.16, q:1.4, filter:'bandpass'});
+      noise({f0:420, f1:2600, dur:0.22, vol:0.15, q:1.4, filter:'bandpass'});
       tone({f0:320, f1:900, type:'triangle', dur:0.16, vol:0.1});
+      tone({f0:660, f1:990, type:'sine', dur:0.1, vol:0.05, at:0.02});
     },
-    // удар ульты: могучий бум + столб
-    impact:function(){
-      tone({f0:170, f1:42, type:'sine', dur:0.5, a:0.004, vol:0.42});
-      tone({f0:360, f1:80, type:'sawtooth', dur:0.28, a:0.003, vol:0.12});
-      noise({f0:1800, f1:220, dur:0.42, vol:0.3, filter:'lowpass', q:0.8});
-      noise({f0:6000, f1:2500, dur:0.16, vol:0.12});
+    // Удар Sun Strike: яркий «шинг» и тяжёлый бум с длинным хвостом — как в доте
+    sunstrike:function(){
+      // металлический блик сверху
+      tone({f0:2100, f1:2900, type:'triangle', dur:0.09, a:0.002, vol:0.18});
+      tone({f0:3150, f1:4200, type:'sine', dur:0.07, a:0.002, vol:0.1, at:0.01});
+      // удар
+      tone({f0:180, f1:38, type:'sine', dur:0.65, a:0.003, vol:0.5});
+      tone({f0:380, f1:70, type:'sawtooth', dur:0.3, a:0.002, vol:0.14});
+      // пыль и хвост
+      noise({f0:2400, f1:180, dur:0.55, vol:0.34, filter:'lowpass', q:0.7});
+      noise({f0:7000, f1:2200, dur:0.2, vol:0.14});
+      noise({f0:300, f1:80, dur:1.1, vol:0.12, filter:'lowpass', q:0.9, at:0.05});
     },
-    // попадание: звонкий пинг + искры
+    // Попадание: звонкий пинг + искры
     hit:function(mult){
       var m = mult || 1;
       tone({f0:880*m, f1:1320*m, type:'triangle', dur:0.2, vol:0.26});
       tone({f0:1760*m, f1:2640*m, type:'sine', dur:0.12, vol:0.12, at:0.02});
       noise({f0:5200, f1:3000, dur:0.12, vol:0.09, filter:'highpass'});
     },
-    // мисс: глухое «вшух»
+    // Мисс: глухое «вшух»
     miss:function(){
       noise({f0:900, f1:150, dur:0.26, vol:0.22, filter:'lowpass', q:0.7, a:0.008});
       tone({f0:220, f1:110, type:'sine', dur:0.2, vol:0.08});
     },
-    // стрик: короткое арпеджио, высота растёт со стриком
-    streak:function(n){
-      var step = Math.min(6, Math.floor((n||1) / CONFIG.score.multStep));
-      var base = 523.25 * Math.pow(1.0595, step*1.5);
-      [0,4,7].forEach(function(semi, i){
-        tone({f0:base*Math.pow(2, semi/12), type:'triangle', dur:0.16, vol:0.19, at:i*0.055});
-      });
-      noise({f0:7000, f1:4000, dur:0.3, vol:0.05, filter:'highpass'});
+    // Добивание крипа: короткий «кошелёк» (звонкая монетка)
+    lastHit:function(){
+      tone({f0:1180, f1:1560, type:'square', dur:0.06, vol:0.06});
+      tone({f0:2360, type:'sine', dur:0.05, vol:0.03, at:0.02});
+    },
+    // Смерть юнита
+    death:function(u){
+      if(u.isTower){ noise({f0:600, f1:90, dur:0.6, vol:0.24, filter:'lowpass', q:0.8}); return; }
+      if(u.isHero){
+        tone({f0:300, f1:120, type:'sawtooth', dur:0.4, vol:0.16});
+        noise({f0:1500, f1:200, dur:0.4, vol:0.14, filter:'lowpass'});
+        return;
+      }
+      noise({f0:1600, f1:400, dur:0.16, vol:0.1, filter:'bandpass', q:0.9});
+    },
+    // Болт вышки
+    towerShot:function(){
+      tone({f0:900, f1:1500, type:'square', dur:0.07, vol:0.05});
+      noise({f0:2600, f1:1200, dur:0.09, vol:0.05, filter:'bandpass', q:1.4});
+    },
+    towerFall:function(){
+      tone({f0:120, f1:34, type:'sine', dur:0.9, a:0.004, vol:0.42});
+      noise({f0:900, f1:120, dur:0.9, vol:0.3, filter:'lowpass', q:0.6});
+      noise({f0:3000, f1:600, dur:0.3, vol:0.12});
+    },
+    // Смерть крипа от ульты/в бою (лёгкий хруст)
+    crunch:function(){ noise({f0:1200, f1:300, dur:0.12, vol:0.09, filter:'bandpass', q:1.2}); },
+    // Стрик-стингер: чем выше серия, тем богаче фраза (уровни 1..8)
+    sting:function(level){
+      var scale = [0,2,4,7,9,12,14,16,19,21];
+      var root = 261.63;
+      var steps = clamp(level, 1, 8) + 1;
+      for(var i=0;i<steps;i++){
+        var semi = scale[(i + level) % scale.length];
+        var oct = (level >= 5 && i % 2 === 0) ? 2 : 1;
+        tone({f0: root * oct * Math.pow(2, semi/12), type: i===0 ? 'triangle' : 'sine',
+              dur: 0.22 + (level*0.02), vol: 0.14 + Math.min(0.1, level*0.012), at: i*0.07});
+      }
+      if(level >= 4) tone({f0: 65.4 * (1 + level*0.05), f1: 49, type:'sine', dur:0.7, vol:0.22, a:0.01});
+    },
+    // Блинк цели: короткий восходящий «вжик» — сигнал, что цель телепортнулась
+    blink:function(){
+      tone({f0:520, f1:1500, type:'sine', dur:0.12, vol:0.13, a:0.004});
+      noise({f0:2600, f1:900, dur:0.1, vol:0.06, filter:'bandpass', q:1.6});
     },
     levelUp:function(){
       [0,5,9,12].forEach(function(s,i){ tone({f0:392*Math.pow(2,s/12), type:'triangle', dur:0.22, vol:0.2, at:i*0.09}); });
     },
     ui:function(){ tone({f0:620, f1:880, type:'square', dur:0.05, vol:0.05}); },
     countdown:function(hi){ tone({f0: hi?900:520, type:'triangle', dur:0.12, vol:0.14}); },
-    // блинк цели: короткий восходящий «вжик» — сигнал, что цель телепортнулась
-    blink:function(){
-      tone({f0:520, f1:1500, type:'sine', dur:0.12, vol:0.13, a:0.004});
-      noise({f0:2600, f1:900, dur:0.1, vol:0.06, filter:'bandpass', q:1.6});
-    },
     roundEnd:function(){ [0,-3,-7].forEach(function(s,i){ tone({f0:523*Math.pow(2,s/12), type:'triangle', dur:0.3, vol:0.18, at:i*0.13}); }); }
   };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  4b. Аннонсер: дотерские объявления стриков и мультикиллов.
+//      Голос — через Web Speech API (если система даёт русский/английский голос),
+//      стингер — синтез WebAudio. Ничего не скачивается.
+// ══════════════════════════════════════════════════════════════════════════════
+var Ann = (function(){
+  var synth = (typeof window !== 'undefined' && window.speechSynthesis) ? window.speechSynthesis : null;
+  var voices = [], ruV = null, enV = null, ready = false;
+  var lastStreakAnn = 0, lastMultiAnn = 0;
+
+  function loadVoices(){
+    if(!synth || !synth.getVoices) return;
+    voices = synth.getVoices() || [];
+    for(var i=0;i<voices.length;i++){
+      var v = voices[i], l = (v.lang || '').toLowerCase();
+      if(!ruV && l.indexOf('ru') === 0) ruV = v;
+      if(!enV && l.indexOf('en') === 0) enV = v;
+    }
+    ready = voices.length > 0;
+  }
+  function init(){
+    if(!synth) return;
+    loadVoices();
+    if(synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+  }
+  function say(text, lang){
+    if(!synth || !Save.data.set.annVoice) return;
+    if(!ready) loadVoices();
+    try{
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = lang || 'ru-RU';
+      u.rate = 0.98; u.pitch = 0.95; u.volume = Save.data.set.mute ? 0 : 1;
+      var v = (lang || 'ru').indexOf('ru') === 0 ? ruV : enV;
+      if(v) u.voice = v;
+      try{ synth.cancel(); }catch(e){}
+      synth.speak(u);
+    }catch(e){}
+  }
+  function banner(text, sub, color){
+    Game.banners.push({ text:text, sub:sub || '', color:color || '#ffc247', t:0, life:CONFIG.ann.bannerTime });
+    while(Game.banners.length > 3) Game.banners.shift();
+  }
+  // Серия попаданий → фразы как у дотерского аннонсера
+  function checkStreak(n){
+    var steps = CONFIG.ann.streakSteps;
+    for(var i=0;i<steps.length;i++){
+      var st = steps[i];
+      if(n === st.n && lastStreakAnn !== n){
+        lastStreakAnn = n;
+        if(CONFIG.ann.stings) SFX.sting(st.sting);
+        banner(st.ru, st.en, '#ffc247');
+        // голос: русская фраза, если есть русский голос, иначе английская
+        if(Save.data.set.annVoice) say(ruV ? st.ru : st.en, ruV ? 'ru-RU' : 'en-US');
+        break;
+      }
+    }
+  }
+  function checkMulti(n, time){
+    var steps = CONFIG.ann.multiSteps;
+    for(var i=steps.length-1;i>=0;i--){
+      var st = steps[i];
+      if(n >= st.n && lastMultiAnn < st.n){
+        lastMultiAnn = st.n;
+        if(CONFIG.ann.stings) SFX.sting(st.sting);
+        banner(st.ru, st.en, '#ff9a3c');
+        if(Save.data.set.annVoice) say(ruV ? st.ru : st.en, ruV ? 'ru-RU' : 'en-US');
+        break;
+      }
+    }
+  }
+  function resetStreak(){ lastStreakAnn = 0; }
+  function resetMulti(){ lastMultiAnn = 0; }
+  return { init:init, say:say, banner:banner, checkStreak:checkStreak, checkMulti:checkMulti,
+           resetStreak:resetStreak, resetMulti:resetMulti,
+           voicesInfo:function(){ return { ru:!!ruV, en:!!enV, count:voices.length }; } };
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -691,9 +948,12 @@ function computeScale(){
   S = clamp(Math.sqrt(W*H) / base, 0.46, 1.45);
 }
 
+var HUD_H = 92;            // высота панели героя внизу (портрет + абилки + HP/мана), screen-px
 function rebuildField(){
   var padTop = (CONFIG.field.topOffset) * S;
-  var padBottom = (CONFIG.field.bottomOffset) * S;
+  HUD_H = clamp(CONFIG.field.bottomOffset * S, 68, 104);
+  CONFIG.field.bottomOffset = HUD_H / S;      // в дизайн-px, чтобы rebuildField резервировал ровно HUD_H
+  var padBottom = CONFIG.field.bottomOffset * S;
   var padX = CONFIG.field.padX * S;
   var availH = H - padTop - padBottom;
   var fh = availH;
@@ -749,135 +1009,233 @@ function pathAt(lane, dist){
 //  6. Юнит: цель, по которой мы учимся попадать
 // ══════════════════════════════════════════════════════════════════════════════
 var unitIdSeq = 1;
+var TEAM = { RADIANT:0, DIRE:1 };          // Radiant — наши (свет), Dire — враги и цели (тьма)
 
-function Unit(type, diff, laneIdx, atEnd){
-  var U = CONFIG.unit;
+// Масштаб «юнитов доты» → пиксели арены. Считается от размера героя,
+// чтобы радиус Sun Strike (175-250 юнитов) был ровно как в доте относительно героя.
+function rebuildScales(){
+  var D = CONFIG.dota;
+  if(!D.heroRadiusUnits) D.heroRadiusUnits = 24;
+  D.unitPx = (CONFIG.unit.heroR * S) / D.heroRadiusUnits;
+}
+function unitsToPx(u){ return u * CONFIG.dota.unitPx; }
+function pxToUnits(px){ return px / (CONFIG.dota.unitPx || 1); }
+
+// ── Юнит: крип линии, герой или вышка ──
+// opts: { kind:'melee'|'ranged'|'hero'|'tower', team, laneIdx, dist, dir, roam, diff }
+function Unit(opts){
+  var D = CONFIG.dota, U = CONFIG.unit;
   this.id = unitIdSeq++;
-  this.type = type;                               // 'creep' | 'hero'
-  this.isHero = type === 'hero';
-  this.laneIdx = laneIdx;
-  this.lane = Lanes[laneIdx];
-  this.r = (this.isHero ? U.heroR : U.creepR) * S;
-  this.hp = this.isHero ? U.heroHp : U.creepHp;
-  this.hpMax = this.hp;
-  // стартовая позиция: с краю дорожки
-  var fromEnd = atEnd === undefined ? chance(0.5) : atEnd;
-  this.dir = fromEnd ? -1 : 1;
-  this.dist = fromEnd ? this.lane.len - rand(0, 60*S) : rand(0, 60*S);
-  this.baseSpeed = diff.speed * rand(1 - U.speedJitter, 1 + U.speedJitter) * S;
-  this.speed = 0;                                 // текущая (сглаженная) скорость вдоль ломаной
-  this.wantSpeed = this.baseSpeed;                // желаемая скорость
-  this.offset = rand(-10,10) * S;                 // боковое смещение от дорожки
+  this.kind = opts.kind;
+  this.team = opts.team;
+  this.isHero = this.kind === 'hero';
+  this.isTower = this.kind === 'tower';
+  this.isCreep = !this.isHero && !this.isTower;
+  this.isRanged = this.kind === 'ranged';
+  this.laneIdx = opts.laneIdx;
+  this.lane = Lanes[this.laneIdx];
+  this.diff = opts.diff;
+  this.roam = !!opts.roam;                   // герой ходит туда-обратно; крип идёт в одну сторону
+  this.dir = opts.dir || 1;
+  this.dist = opts.dist || 0;
+  this.offset = opts.offset === undefined ? rand(-9, 9) * S : opts.offset;
   this.offsetVel = 0;
-  this.stun = 0;                                  // герой «стоит» — секунды
-  this.dash = 0;                                  // остаток рывка
-  this.juke = rand(-1,1);                         // боковой множитель скорости
-  this.jukeT = 0;                                 // остаток бокового ухода
-  this.gate = 0;                                  // stutter-step: таймер текущей фазы
-  this.gateMoving = true;
-  this.blinkIn = rand(0.8, 2.5);                  // когда следующий блинк
-  this.nextEvent = rand(diff.jukeEvery[0] * 0.4, diff.jukeEvery[1]);
-  this.diff = diff;
+
+  // размер (дизайн-px → мировые)
+  var baseR = this.isHero ? U.heroR : (this.isTower ? D.towerRadius : (this.isRanged ? U.creepR * 0.92 : U.creepR));
+  this.r = baseR * S;
+
+  // боёвка
+  this.hpMax = this.isHero ? D.heroHp : (this.isTower ? D.towerHp : D.creepHp[this.kind]);
+  this.hp = this.hpMax;
+  this.dmg = this.isHero ? D.heroDmg : (this.isTower ? D.towerDmg : D.creepDmg[this.kind]);
+  this.atkInt = this.isHero ? D.heroAtkInterval : (this.isTower ? D.towerAtkInterval : D.creepAtkInterval);
+  this.range = (this.isHero ? D.heroRange : (this.isTower ? D.towerRange : D.creepRange[this.kind])) * S;
+  this.aggro = (this.isHero ? D.heroAggro : (this.isTower ? D.towerRange * 1.08 : D.creepAggro[this.kind])) * S;
+  this.atkCd = rand(0, 0.4);
+  this.swing = 0;                            // анимация удара
+  this.swingA = 0;
+  this.targetId = 0;
+  this.kills = 0;                            // сколько целей добил этот юнит (для лога «боя линий»)
+
+  // движение
+  this.speedJit = rand(1 - U.speedJitter, 1 + U.speedJitter);
+  var sp = this.isHero ? D.heroSpeed * (this.diff.heroSpeedMul || 1)
+                       : (this.isTower ? 0 : D.creepSpeed[this.kind]);
+  this.baseSpeed = sp * this.speedJit * S;
+  this.speed = this.isTower ? 0 : (this.roam ? this.baseSpeed : this.baseSpeed);
+  this.wantSpeed = this.baseSpeed;
+
+  // состояния поведения (джуки/стойки/рывки/блинк — только у героев)
+  this.stun = 0; this.dash = 0; this.jukeT = 0;
+  this.gate = 0; this.gateMoving = true;
+  this.blinkIn = rand(0.8, 2.5);
+  this.nextEvent = rand((this.diff.jukeEvery ? this.diff.jukeEvery[0] : 2) * 0.4,
+                        (this.diff.jukeEvery ? this.diff.jukeEvery[1] : 3));
+  this.slash = 0;                            // вспышка-замах
   this.dead = false;
-  this.spawnT = 0;                                // анимация появления
+  this.spawnT = 0;
   this.hitFlash = 0;
-  this.vel = {x:0, y:0};                          // мировая скорость (для аналитики)
-  this.pos = {x:0, y:0};
-  this.refDir = {x:1,y:0};                        // «намеренное» направление движения (по дорожке)
+  this.blinkFx = rand(0, 1);
+  this.vel = { x:0, y:0 };
+  this.pos = { x:0, y:0 };
+  this.refDir = { x:1, y:0 };
   this.trail = [];
   this.trailT = 0;
-  this.blinkFx = rand(0, 1);
-  pathAt(this.lane, this.dist);
+  pathAtOut(this);
 }
 
+// Цели ищет игра (юниты другой команды), а юнит только пользуется
+Unit.prototype.findTarget = function(){
+  var units = Game.units, best = null, bestD = this.aggro;
+  for(var i=0;i<units.length;i++){
+    var o = units[i];
+    if(o.dead || o.team === this.team) continue;
+    var d = len(o.pos.x - this.pos.x, o.pos.y - this.pos.y) - o.r;
+    if(d < bestD){ bestD = d; best = o; }
+  }
+  this.targetId = best ? best.id : 0;
+  this.targetDist = best ? bestD : 0;
+  return best;
+};
+
 Unit.prototype.update = function(dt, time){
-  var U = CONFIG.unit, D = this.diff;
+  var D = CONFIG.dota, U = CONFIG.unit;
   this.spawnT = Math.min(1, this.spawnT + dt * 3);
   this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
   this.blinkFx = Math.max(0, this.blinkFx - dt * 2.2);
+  this.swing = Math.max(0, this.swing - dt);
+  this.slash = Math.max(0, this.slash - dt * 3.5);
+  this.atkCd -= dt;
+
+  // ── вышка: стоит, стреляет по ближайшему врагу в радиусе ──
+  if(this.isTower){
+    var t = this.findTarget();
+    if(t && this.atkCd <= 0){ this.attack(t); }
+    pathAtOut(this);
+    return;
+  }
 
   // ── stutter-step (Insane): цель дёргается микро-шагами ──
-  if(D.stutter){
+  if(this.isHero && this.diff.stutter){
     this.gate -= dt;
     if(this.gate <= 0){
       this.gateMoving = !this.gateMoving;
       this.gate = this.gateMoving ? rand(U.stutterOn[0], U.stutterOn[1]) : rand(U.stutterOff[0], U.stutterOff[1]);
     }
-  } else {
-    this.gateMoving = true;
-  }
+  } else this.gateMoving = true;
 
-  // ── расписание поведений (джук / стойка / рывок / блинк) ──
-  this.nextEvent -= dt;
-  if(this.nextEvent <= 0){
-    this.nextEvent = rand(D.jukeEvery[0], D.jukeEvery[1]);
-    this.behave(time);
-  }
+  // ── расписание подлостей ──
+  if(this.isHero){
+    this.nextEvent -= dt;
+    if(this.nextEvent <= 0){
+      this.nextEvent = rand(this.diff.jukeEvery[0], this.diff.jukeEvery[1]);
+      this.behave(time);
+    }
+    if(this.stun > 0) this.stun -= dt;
+    if(this.dash > 0) this.dash -= dt;
+    if(this.jukeT > 0) this.jukeT -= dt;
 
-  // таймеры поведений
-  if(this.stun > 0) this.stun -= dt;
-  if(this.dash > 0) this.dash -= dt;
-  if(this.jukeT > 0) this.jukeT -= dt;
-
-  // ── блинк (Insane) ──
-  if(D.blink){
-    this.blinkIn -= dt;
-    if(this.blinkIn <= 0){
-      this.blinkIn = rand(U.blinkCd[0], U.blinkCd[1]);
-      var dist = (D.blinkDist || 300) * S;
-      var nd = clamp(this.dist + this.dir * dist, 0, this.lane.len);
-      if(nd !== this.dist){
-        // визуальный след телепорта
-        FX.blink(this.pos.x, this.pos.y);
-        this.dist = nd;
-        this.offset += rand(-24,24) * S;
-        pathAtOut(this);
-        FX.blink(this.pos.x, this.pos.y);
-        this.blinkFx = 1;
-        SFX.blink();  // сигнал: цель телепортнулась
+    // ── блинк (Insane) ──
+    if(this.diff.blink){
+      this.blinkIn -= dt;
+      if(this.blinkIn <= 0){
+        this.blinkIn = rand(U.blinkCd[0], U.blinkCd[1]);
+        var dist = (this.diff.blinkDist || 300) * S;
+        var nd = clamp(this.dist + this.dir * dist, 0, this.lane.len);
+        if(nd !== this.dist){
+          FX.blink(this.pos.x, this.pos.y);
+          this.dist = nd;
+          this.offset += rand(-24,24) * S;
+          pathAtOut(this);
+          FX.blink(this.pos.x, this.pos.y);
+          this.blinkFx = 1;
+          SFX.blink();
+        }
       }
     }
   }
 
-  // ── расчёт желаемой скорости ──
+  // ── бой: враг рядом — стоим и бьём ──
+  var target = this.findTarget();
+  var inRange = target && this.targetDist <= this.range;
+  if(inRange && this.atkCd <= 0) this.attack(target);
+  this.inCombat = !!inRange;
+
+  // ── желаемая скорость ──
   var want = this.baseSpeed;
-  if(this.stun > 0) want = 0;
-  else if(this.dash > 0) want = this.baseSpeed * U.dashMul;
-  else if(!this.gateMoving) want = 0;
+  if(inRange) want = 0;                                   // бьёмся — стоим
+  if(this.isHero){
+    if(this.stun > 0) want = 0;
+    else if(this.dash > 0 && !inRange) want = this.baseSpeed * U.dashMul;
+    else if(!this.gateMoving) want = 0;
+  }
   this.wantSpeed = want;
-  // плавный разгон/торможение
   this.speed += (want - this.speed) * clamp(dt * U.accel, 0, 1);
 
-  // ── движение вдоль ломаной (ping-pong) ──
+  // ── движение по ломаной ──
   var prevX = this.pos.x, prevY = this.pos.y;
-  this.dist += this.speed * this.dir * dt;
-  if(this.dist >= this.lane.len){ this.dist = this.lane.len; this.dir = -1; }
-  else if(this.dist <= 0){ this.dist = 0; this.dir = 1; }
+  var move = this.speed * this.dir * dt;
+  this.dist += move;
+  if(this.roam){
+    if(this.dist >= this.lane.len){ this.dist = this.lane.len; this.dir = -1; }
+    else if(this.dist <= 0){ this.dist = 0; this.dir = 1; }
+  } else {
+    // крип идёт в одну сторону: дошёл до конца — встаёт у вышки противника
+    this.dist = clamp(this.dist, 0, this.lane.len);
+  }
 
-  // ── пружина бокового смещения (джук возвращается обратно) ──
-  var k = 7.5, c = 3.2;
-  this.offsetVel += (-this.offset * k - this.offsetVel * c) * dt;
-  this.offset += this.offsetVel * dt;
-  // не даём улететь за пределы поля
+  // ── пружина бокового смещения ──
+  if(this.isHero){
+    // герой ходит по пружине: джук уводит вбок и возвращает обратно
+    var k = 7.5, c = 3.2;
+    this.offsetVel += (-this.offset * k - this.offsetVel * c) * dt;
+    this.offset += this.offsetVel * dt;
+  }
   var maxOff = Math.max(14*S, Field.h * 0.12);
   if(Math.abs(this.offset) > maxOff){ this.offset = sign(this.offset) * maxOff; this.offsetVel *= -0.25; }
 
-  // ── мировая позиция ──
   pathAtOut(this);
-
   this.vel.x = dt > 0 ? (this.pos.x - prevX)/dt : 0;
   this.vel.y = dt > 0 ? (this.pos.y - prevY)/dt : 0;
 
-  // ── след движения (помогает читать направление и скорость) ──
+  // ── след движения ──
   this.trailT -= dt;
-  if(this.trailT <= 0 && this.speed > 6*S){
-    this.trailT = 0.045;
-    this.trail.push({x:this.pos.x, y:this.pos.y, t:1});
-    if(this.trail.length > CONFIG.fx.trailLen) this.trail.shift();
+  if(this.trailT <= 0 && this.speed > 6*S && this.trail.length < CONFIG.fx.trailLen){
+    this.trailT = 0.05;
+    this.trail.push({ x:this.pos.x, y:this.pos.y, t:1 });
   }
   for(var i=0;i<this.trail.length;i++) this.trail[i].t -= dt * 2.2;
   while(this.trail.length && this.trail[0].t <= 0) this.trail.shift();
 };
+
+// Атака: меле — мгновенно, рендж/герой/вышка — снарядом
+Unit.prototype.attack = function(target){
+  var U = CONFIG.unit;
+  this.atkCd = this.atkInt;
+  this.swing = U.swingTime;
+  this.slash = 1;
+  this.swingA = Math.atan2(target.pos.y - this.pos.y, target.pos.x - this.pos.x);
+  var dmg = this.dmg;
+  if(target.isTower && !this.isTower) dmg = Math.round(dmg * CONFIG.dota.creepVsBuildingMul);
+  if(this.isTower || this.isRanged){
+    FX.projectile(this, target, dmg, this.isTower ? 760 : U.projSpeed);
+  } else {
+    Game.dealDamage(target, dmg, this);
+    FX.slash(target.pos.x, target.pos.y, this.swingA, this.isHero ? '#ffd08a' : 'rgba(220,220,210,0.9)');
+  }
+};
+
+// Пересчёт размеров и скоростей юнита после смены масштаба (ресайз/поворот)
+function recomputeUnitScale(u){
+  var D = CONFIG.dota, U = CONFIG.unit;
+  var baseR = u.isHero ? U.heroR : (u.isTower ? D.towerRadius : (u.kind === 'ranged' ? U.creepR*0.92 : U.creepR));
+  u.r = baseR * S;
+  u.range = (u.isHero ? D.heroRange : (u.isTower ? D.towerRange : D.creepRange[u.kind])) * S;
+  u.aggro = (u.isHero ? D.heroAggro : (u.isTower ? D.towerRange * 1.08 : D.creepAggro[u.kind])) * S;
+  var sp = u.isHero ? D.heroSpeed * (u.diff.heroSpeedMul || 1) : (u.isTower ? 0 : D.creepSpeed[u.kind]);
+  u.baseSpeed = sp * u.speedJit * S;
+}
 
 // пересчёт мировой позиции по параметру дистанции
 function pathAtOut(u){
@@ -888,25 +1246,23 @@ function pathAtOut(u){
   u.pos.y = p.y + p.ny * u.offset;
 }
 
-// Выбор поведения. Чем выше сложность — тем чаще подлости.
+// Выбор поведения героя: чем выше сложность — тем чаще подлости
 Unit.prototype.behave = function(time){
   var D = this.diff, U = CONFIG.unit;
   var roll = Math.random(), pa = D.pauseChance || 0, da = D.dash || 0, ja = D.juke || 0;
-  if(this.stun > 0 || this.speed < this.baseSpeed * 0.35) return;   // уже стоит — не дёргаем
-  if(this.isHero && roll < pa){
-    // остановка на месте — обманка: привыкли упреждать, а цель встала
-    this.stun = rand(U.pauseTime[0], U.pauseTime[1]);
-  } else if(this.isHero && roll < pa + da){
-    this.dash = rand(U.dashTime[0], U.dashTime[1]);
-  } else if(this.isHero && roll < pa + da + ja){
-    if(chance(0.72)){
-      // боковой джук: резкая смена направления вбок
+  if(this.stun > 0 || this.speed < this.baseSpeed * 0.35) return;
+  if(roll < pa){
+    this.stun = rand(U.pauseTime[0], U.pauseTime[1]);       // остановка — обманка
+  } else if(roll < pa + da){
+    this.dash = rand(U.dashTime[0], U.dashTime[1]);         // рывок
+  } else if(roll < pa + da + ja){
+    if(chance(0.72)){                                        // боковой джук
       this.offsetVel += sign(Math.random()-0.5) * rand(150, 265) * S;
       this.jukeT = rand(U.jukeTime[0], U.jukeTime[1]);
       this.stun = Math.max(this.stun, this.jukeT);
-    } else {
-      // разворот на 180°: цель резко бежит назад
+    } else {                                                 // резкий разворот
       this.dir = -this.dir;
+      if(!this.roam) this.roam = true;
       this.nextEvent = rand(0.35, 0.9);
     }
   }
@@ -916,7 +1272,9 @@ Unit.prototype.behave = function(time){
 //  7. Эффекты: частицы, волны, всплывающие числа, тряска, вспышки
 // ══════════════════════════════════════════════════════════════════════════════
 var FX = (function(){
-  var parts = [], rings = [], floats = [], booms = [], shakes = { x:0, y:0, mag:0 }, flash = 0, flashColor = '255,240,200';
+  var parts = [], rings = [], floats = [], booms = [], decals = [], corpses = [], projectiles = [], slashFx = [];
+  var shakes = { x:0, y:0, mag:0 }, flash = 0, flashColor = '255,240,200';
+
   function addPart(x,y,vx,vy,life,size,color,kind){
     if(parts.length >= CONFIG.fx.maxParticles) return;
     parts.push({x:x,y:y,vx:vx,vy:vy,life:life,max:life,size:size,color:color,kind:kind||'dot',rot:rand(0,TAU)});
@@ -926,31 +1284,90 @@ var FX = (function(){
     rings.push({x:x,y:y,r0:r0,r1:r1,t:0,life:life,color:color,width:width||2});
   }
   function addFloat(x,y,text,color,size,bold){
-    if(floats.length > 26) floats.shift();
+    if(floats.length > 22) floats.shift();
     floats.push({x:x,y:y,text:text,color:color,size:size||14,t:0,life:1.15,vy:-34*S,bold:bold!==false});
   }
   function shake(mag){ shakes.mag = Math.min(30*S, shakes.mag + mag * CONFIG.fx.shakeMul); }
   function doFlash(a, color){ flash = Math.max(flash, a); if(color) flashColor = color; }
 
-  // взрыв Sun Strike: столб света + искры + пыль
-  function sunstrike(x,y,radius){
-    booms.push({x:x,y:y,t:0,life:CONFIG.strike.explodeTime, r:radius});
-    addRing(x, y, radius*0.25, radius*2.6, 0.42, '255,214,130', 3.2);
-    addRing(x, y, radius*0.1, radius*1.7, 0.28, '255,255,235', 2.0);
-    var n = 26;
-    for(var i=0;i<n;i++){
-      var a = rand(0,TAU), sp = rand(70, 330) * S;
-      addPart(x, y, Math.cos(a)*sp, Math.sin(a)*sp*0.7 - rand(40,220)*S, rand(0.35,0.85),
-              rand(1.4,3.6)*S, i%4===0 ? '255,255,220' : (i%3===0 ? '255,170,60' : '255,110,20'), 'spark');
-    }
-    for(var j=0;j<14;j++){
-      addPart(x + rand(-radius,radius), y + rand(-radius*0.5,radius*0.5), rand(-40,40)*S, rand(-190,-70)*S,
-              rand(0.5,1.1), rand(2.5,6)*S, '150,120,70', 'smoke');
-    }
-    shake(5.5*S);
-    doFlash(0.34, '255,226,170');
+  // Выжженная земля — остаётся после удара (как пятно от Sun Strike в доте)
+  function addDecal(x, y, r, life){
+    if(decals.length >= CONFIG.fx.maxDecals) decals.shift();
+    decals.push({ x:x, y:y, r:r, t:0, life:life || CONFIG.strike.scorchTime });
   }
-  // телепорт-блинк
+  // Трупик (быстро растворяется, как в доте)
+  function addCorpse(u){
+    if(corpses.length >= CONFIG.fx.maxCorpses) corpses.shift();
+    corpses.push({ x:u.pos.x, y:u.pos.y, r:u.r, kind:u.kind, team:u.team,
+                   life:CONFIG.dota.corpseTime, t:0, a:rand(0,TAU) });
+  }
+  // Замах/удар в ближнем бою
+  function slash(x, y, ang, color){
+    if(slashFx.length > 26) slashFx.shift();
+    slashFx.push({ x:x, y:y, a:ang, color:color || 'rgba(255,235,210,0.9)', t:0, life:0.18 });
+  }
+  // Снаряд рендж-атаки (крип, герой) или болт вышки
+  function projectile(src, target, dmg, speed){
+    if(projectiles.length >= CONFIG.fx.maxProjectiles) return;
+    var sp = (speed || CONFIG.unit.projSpeed) * S;
+    var a = Math.atan2(target.pos.y - src.pos.y, target.pos.x - src.pos.x);
+    projectiles.push({
+      x:src.pos.x + Math.cos(a)*src.r*0.9, y:src.pos.y + Math.sin(a)*src.r*0.9,
+      target:target, dmg:dmg, speed:sp, team:src.team, tower:src.isTower, srcUnit:src,
+      dmg: dmg, color: src.isTower ? (src.team === TEAM.RADIANT ? '160,235,150' : '255,150,120')
+                         : (src.team === TEAM.RADIANT ? '190,240,150' : '255,170,140'),
+      size: (src.isTower ? 3.6 : 2.2) * S
+    });
+  }
+
+  // ── Взрыв Sun Strike: точь-в-точь по мотивам доты ──
+  // ярчайший столб от неба, белое ядро, тёплый ореол, три волны по земле,
+  // горящий мусор, пыль и выжженное пятно
+  function sunstrike(x, y, radius){
+    booms.push({ x:x, y:y, t:0, life:CONFIG.strike.explodeTime, r:radius });
+    // волны по земле: быстрая белая → широкая золотая → плавная затухающая
+    addRing(x, y, radius*0.18, radius*2.9, 0.36, '255,255,240', 3.4);
+    addRing(x, y, radius*0.30, radius*2.2, 0.52, '255,214,130', 2.6);
+    addRing(x, y, radius*0.55, radius*1.45, 0.75, '255,150,60', 1.6);
+    // горящие искры вверх и в стороны
+    for(var i=0;i<30;i++){
+      var a = rand(0,TAU), sp = rand(60, 380) * S;
+      addPart(x + Math.cos(a)*rand(0,radius*0.6), y + Math.sin(a)*rand(0,radius*0.4),
+              Math.cos(a)*sp, Math.sin(a)*sp*0.65 - rand(60,300)*S, rand(0.35,0.95),
+              rand(1.3,3.8)*S, i%4===0 ? '255,255,230' : (i%3===0 ? '255,190,80' : '255,110,25'), 'spark');
+    }
+    // пыль и гарь по земле
+    for(var j=0;j<16;j++){
+      var aa = rand(0,TAU), rr = rand(radius*0.3, radius*1.1);
+      addPart(x + Math.cos(aa)*rr, y + Math.sin(aa)*rr*0.7, Math.cos(aa)*rand(20,70)*S, rand(-40,-8)*S,
+              rand(0.6,1.3), rand(3,7)*S, '150,120,70', 'smoke');
+    }
+    addDecal(x, y, radius*0.98);
+    shake(6.2*S);
+    doFlash(0.36, '255,230,180');
+  }
+  // Промах: пыль и серый «вшух» на месте удара
+  function miss(x, y, radius){
+    addRing(x, y, radius*0.9, radius*1.25, 0.3, '150,150,140', 1.4);
+    for(var i=0;i<10;i++){
+      var a = rand(0,TAU);
+      addPart(x, y, Math.cos(a)*rand(20,90)*S, Math.sin(a)*rand(20,70)*S - 20*S, rand(0.3,0.6),
+              rand(1.6,3.2)*S, '130,125,105', 'dot');
+    }
+  }
+  // Искра «кипящего» маркера каста
+  function fuse(x, y, radius){
+    var a = rand(0,TAU);
+    addPart(x + Math.cos(a)*radius, y + Math.sin(a)*radius*0.6,
+            rand(-16,16)*S, rand(-70,-26)*S, rand(0.35,0.7), rand(1.2,2.4)*S, '255,190,80', 'ember');
+  }
+  // Ещё живые угли на выжженной земле
+  function emberTick(x, y, r){
+    var a = rand(0,TAU), rr = Math.sqrt(Math.random()) * r * 0.9;
+    addPart(x + Math.cos(a)*rr, y + Math.sin(a)*rr*0.65, rand(-8,8)*S, rand(-42,-14)*S,
+            rand(0.4,0.9), rand(1,2.1)*S, Math.random()<0.5 ? '255,140,40' : '255,200,90', 'ember');
+  }
+  // Телепорт-блинк героя
   function blink(x,y){
     addRing(x, y, 4*S, 30*S, 0.3, '120,215,255', 2);
     for(var i=0;i<9;i++){
@@ -958,32 +1375,32 @@ var FX = (function(){
       addPart(x, y, Math.cos(a)*rand(30,110)*S, Math.sin(a)*rand(30,110)*S, rand(0.2,0.45), rand(1.4,2.6)*S, '110,200,255','spark');
     }
   }
-  // попадание: золотые искры + «+N»
-  function kill(x,y,radius){
-    addRing(x, y, radius*0.2, radius*1.5, 0.34, '140,235,120', 2.4);
-    for(var i=0;i<18;i++){
-      var a = rand(0,TAU), sp = rand(50,240)*S;
-      addPart(x, y, Math.cos(a)*sp, Math.sin(a)*sp - rand(20,120)*S, rand(0.3,0.7), rand(1.5,3.4)*S,
-              i%2 ? '255,220,120' : '160,240,120','spark');
+  // Смерть юнита: кровь/осколки по команде
+  function death(u){
+    var hero = u.isHero, n = hero ? 20 : 10;
+    for(var i=0;i<n;i++){
+      var a = rand(0,TAU), sp = rand(40, hero ? 210 : 130)*S;
+      addPart(u.pos.x, u.pos.y, Math.cos(a)*sp, Math.sin(a)*sp - rand(20,90)*S, rand(0.35,0.85),
+              rand(1.6,3.6)*S, u.team === TEAM.RADIANT ? '150,220,120' : '230,110,80', 'spark');
     }
+    addRing(u.pos.x, u.pos.y, u.r*0.5, u.r*3.2, 0.4, u.team === TEAM.RADIANT ? '150,230,120' : '235,120,90', 2);
+    addCorpse(u);
   }
-  // промах: пыль и серый «вшух»
-  function miss(x,y,radius){
-    addRing(x, y, radius*0.9, radius*1.25, 0.3, '150,150,140', 1.4);
-    for(var i=0;i<10;i++){
-      var a = rand(0,TAU);
-      addPart(x, y, Math.cos(a)*rand(20,90)*S, Math.sin(a)*rand(20,70)*S - 20*S, rand(0.3,0.6), rand(1.6,3.2)*S, '130,125,105','dot');
+  // Падение вышки: каменная пыль, обломки и тряска
+  function towerFall(x, y, r){
+    for(var i=0;i<30;i++){
+      var a = rand(0,TAU), sp = rand(50, 230)*S;
+      addPart(x, y - r*0.6, Math.cos(a)*sp*0.7, Math.sin(a)*sp - rand(40,150)*S, rand(0.6,1.5),
+              rand(2.5,6.5)*S, i%3===0 ? '120,116,105' : '92,86,78', 'smoke');
     }
-  }
-  // искры «кипящего» маркера
-  function fuse(x,y,radius){
-    var a = rand(0,TAU);
-    addPart(x + Math.cos(a)*radius, y + Math.sin(a)*radius*0.5,
-            rand(-16,16)*S, rand(-70,-26)*S, rand(0.35,0.7), rand(1.2,2.4)*S, '255,190,80','ember');
+    addRing(x, y, r*0.6, r*4.2, 0.7, '190,170,140', 3);
+    shake(9*S);
+    doFlash(0.16, '220,200,170');
+    addFloat(x, y - r*1.5, 'ВЫШКА СНЕСЕНА', '#ffc247', 16*S);
   }
 
   function update(dt){
-    var i;
+    var i, j;
     for(i=parts.length-1;i>=0;i--){
       var p = parts[i];
       p.life -= dt;
@@ -994,31 +1411,52 @@ var FX = (function(){
       else { p.vy += 420*S*dt; p.vx *= (1 - 1.1*dt); }
       p.rot += dt*3;
     }
-    for(i=rings.length-1;i>=0;i--){
-      var r = rings[i]; r.t += dt;
-      if(r.t >= r.life) rings.splice(i,1);
-    }
+    for(i=rings.length-1;i>=0;i--){ rings[i].t += dt; if(rings[i].t >= rings[i].life) rings.splice(i,1); }
     for(i=floats.length-1;i>=0;i--){
       var f = floats[i]; f.t += dt; f.y += f.vy*dt; f.vy *= (1 - 1.6*dt);
       if(f.t >= f.life) floats.splice(i,1);
     }
-    for(i=booms.length-1;i>=0;i--){
-      var b = booms[i]; b.t += dt;
-      if(b.t >= b.life) booms.splice(i,1);
+    for(i=booms.length-1;i>=0;i--){ booms[i].t += dt; if(booms[i].t >= booms[i].life) booms.splice(i,1); }
+    for(i=decals.length-1;i>=0;i--){ decals[i].t += dt; if(decals[i].t >= decals[i].life) decals.splice(i,1); }
+    for(i=corpses.length-1;i>=0;i--){ corpses[i].t += dt; if(corpses[i].t >= corpses[i].life) corpses.splice(i,1); }
+    for(i=slashFx.length-1;i>=0;i--){ slashFx[i].t += dt; if(slashFx[i].t >= slashFx[i].life) slashFx.splice(i,1); }
+
+    // ── снаряды: летят в цель и наносят урон при попадании ──
+    for(i=projectiles.length-1;i>=0;i--){
+      var pr = projectiles[i];
+      var tgt = pr.target;
+      if(!tgt || tgt.dead || Game.units.indexOf(tgt) < 0){ projectiles.splice(i,1); continue; }
+      var dx = tgt.pos.x - pr.x, dy = tgt.pos.y - pr.y;
+      var d = len(dx, dy), step = pr.speed * dt;
+      if(d <= step + tgt.r){
+        Game.dealDamage(tgt, pr.dmg, pr.srcUnit || null);
+        slash(pr.x, pr.y, Math.atan2(dy,dx), 'rgba(' + pr.color + ',0.9)');
+        for(j=0;j<3;j++) addPart(pr.x, pr.y, rand(-60,60)*S, rand(-60,60)*S, 0.25, 1.6*S, pr.color, 'spark');
+        projectiles.splice(i,1);
+        continue;
+      }
+      pr.x += dx/d * step; pr.y += dy/d * step;
     }
-    // затухание тряски и вспышки
+
     shakes.mag *= Math.max(0, 1 - CONFIG.fx.shakeDecay*dt);
     shakes.x = rand(-1,1) * shakes.mag;
     shakes.y = rand(-1,1) * shakes.mag;
     flash *= Math.max(0, 1 - CONFIG.fx.flashDecay*dt);
     if(flash < 0.004) flash = 0;
   }
-  function clear(){ parts.length = 0; rings.length = 0; floats.length = 0; booms.length = 0; shakes.mag = 0; flash = 0; }
+  function clear(){
+    parts.length = 0; rings.length = 0; floats.length = 0; booms.length = 0;
+    decals.length = 0; corpses.length = 0; projectiles.length = 0; slashFx.length = 0;
+    shakes.mag = 0; flash = 0;
+  }
   return { addPart:addPart, addRing:addRing, addFloat:addFloat, shake:shake, sunstrike:sunstrike,
-           blink:blink, kill:kill, miss:miss, fuse:fuse, update:update, clear:clear,
+           blink:blink, death:death, towerFall:towerFall, slash:slash, projectile:projectile,
+           miss:miss, fuse:fuse,
+           addDecal:addDecal, addCorpse:addCorpse, emberTick:emberTick, update:update, clear:clear,
            parts:function(){return parts;}, rings:function(){return rings;}, floats:function(){return floats;},
-           booms:function(){return booms;}, shakeOff:shakes, getFlash:function(){return flash;},
-           getFlashColor:function(){return flashColor;} };
+           booms:function(){return booms;}, decals:function(){return decals;}, corpses:function(){return corpses;},
+           projectiles:function(){return projectiles;}, slashes:function(){return slashFx;},
+           shakeOff:shakes, getFlash:function(){return flash;}, getFlashColor:function(){return flashColor;} };
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1028,158 +1466,316 @@ var Game = {
   state:'menu',            // menu | playing | paused | results
   time:0,                  // игровое время раунда (замирает на паузе), сек
   countdownT:0,            // отсчёт перед стартом
-  units: [],
+  units: [],               // все юниты: крипы, герои, вышки
   casts: [],               // ожидающие удара Sun Strike
   reviews: [],             // разборы кастов (метки + вектор ошибки)
-  respawns: [],            // запланированные респавны
+  banners: [],             // крупные надписи аннонсера
   diff: DIFFICULTIES[2],
   delay: CONFIG.strike.delayDefault,
   dur: CONFIG.roundDefault,
   lastCast: -99,
-  castsN:0, hitsN:0, kills:0, streak:0, bestStreak:0, score:0, mult:1,
+  castsN:0, hitsN:0, heroHitsN:0, kills:0, killsHeroes:0, killsCreeps:0, lastHits:0,
+  streak:0, bestStreak:0, score:0, mult:1,
   missSum:0, missN:0, allDistSum:0, allDistN:0, timeErrSum:0, timeErrN:0,
-  records:[],              // {t, dist, hit, along} для графика
+  records:[],              // {t, dist, hit, along, perp, kind} для графика
   xpGain:0,
   endAt:0,
-  pointer:{x:0,y:0, inside:false, active:false},
+  damageDealt:0,           // урон ультой по врагам
+  battle:null,             // счёт «войны линий»
+  nextWave:0,              // время следующей волны
+  multiCount:0, multiUntil:-99,
+  annStreak:0, annMulti:0,
+  pointer:{x:0,y:0, inside:false, touch:false, touchUntil:0},
+  manaLvl:1,
   roundId:0
 };
 
 Game.reset = function(){
+  var D = CONFIG.dota;
   this.time = 0;
   this.units.length = 0;
   this.casts.length = 0;
   this.reviews.length = 0;
-  this.respawns.length = 0;
-  this.castsN = 0; this.hitsN = 0; this.kills = 0;
+  this.banners.length = 0;
+  this.castsN = 0; this.hitsN = 0; this.heroHitsN = 0; this.kills = 0;
+  this.killsHeroes = 0; this.killsCreeps = 0; this.lastHits = 0;
   this.streak = 0; this.bestStreak = 0; this.score = 0; this.mult = 1;
   this.missSum = 0; this.missN = 0; this.allDistSum = 0; this.allDistN = 0;
   this.timeErrSum = 0; this.timeErrN = 0;
   this.records = [];
   this.xpGain = 0;
+  this.damageDealt = 0;
+  this.multiCount = 0; this.multiUntil = -99;
+  this.annStreak = 0; this.annMulti = 0;
   this.lastCast = -99;
   this.endAt = this.dur;
   this.countdownT = CONFIG.countdown;
+  this.nextWave = D.firstWave;
+  this.battle = { radiantKills:0, direKills:0, towersRadiant:0, towersDire:0 };
+  this.mana = CONFIG.strike.manaMax;
+  this.heroRespawns.length = 0;
+  this.towerRespawns.length = 0;
+  Ann.resetStreak(); Ann.resetMulti();
   FX.clear();
 };
 
-Game.start = function(diffId, dur, delay){
+Game.start = function(diffId, dur, delay, ultLevel, aghanim){
   this.diff = DIFFICULTIES[diffId] || DIFFICULTIES[2];
   this.dur = dur || CONFIG.roundDefault;
   this.delay = delay || CONFIG.strike.delayDefault;
+  this.ultLevel = clamp(ultLevel || CONFIG.strike.ultLevelDefault, 1, 4);
+  this.aghanim = !!aghanim;
   this.roundId++;
   this.reset();
   this.state = 'playing';
-  // стартовые цели, разнесённые по дорожкам
-  for(var i=0;i<this.diff.count;i++){
-    // растягиваем стартовые цели по доступным дорожкам
-    var laneIdx = Math.floor(i * Lanes.length / this.diff.count) % Lanes.length;
-    var t = new Unit(this.spawnType(i), this.diff, laneIdx, chance(0.5));
-    // разносим стартовые позиции, чтобы цели не шли кучей
-    var push = (i * 90 + 40) * S * (Math.random() < 0.5 ? 1 : -1);
-    t.dist = clamp(t.dist + push, 20*S, t.lane.len - 20*S);
-    pathAtOut(t);
-    this.units.push(t);
+  // вышки обеих команд на концах каждой линии (как в доте)
+  for(var i=0;i<Lanes.length;i++){
+    this.spawnTower(TEAM.RADIANT, i);
+    this.spawnTower(TEAM.DIRE, i);
   }
+  // герои-цели (все враги — Dire)
+  for(var h=0; h<this.diff.heroes; h++) this.spawnHero(h % Lanes.length);
+  // первые волны крипов сразу, чтобы линия ожила
+  for(var L=0; L<Lanes.length; L++){ this.spawnWave(L, TEAM.RADIANT); this.spawnWave(L, TEAM.DIRE); }
+  this.nextWave = CONFIG.dota.firstWave;
   SFX.unlock();
   UI.showHud();
 };
 
-Game.spawnType = function(i){
-  var D = this.diff;
-  if(D.heroes <= 0) return 'creep';
-  if(D.heroes >= 1) return 'hero';
-  return chance(D.heroes) ? 'hero' : 'creep';
+Game.laneEndDist = function(lane, team){
+  // вышки стоят у своих краёв линии
+  return team === TEAM.RADIANT ? lane.len * 0.045 : lane.len * 0.955;
 };
 
+Game.spawnTower = function(team, laneIdx){
+  var lane = Lanes[laneIdx];
+  var t = new Unit({ kind:'tower', team:team, laneIdx:laneIdx, dist:this.laneEndDist(lane, team), dir:1, diff:this.diff });
+  t.offset = 0;
+  pathAtOut(t);
+  this.units.push(t);
+  return t;
+};
+
+Game.spawnHero = function(laneIdx){
+  var lane = Lanes[laneIdx % Lanes.length];
+  var u = new Unit({ kind:'hero', team:TEAM.DIRE, laneIdx:laneIdx % Lanes.length,
+                     dist:rand(lane.len*0.15, lane.len*0.85), dir:chance(0.5) ? 1 : -1,
+                     roam:true, diff:this.diff });
+  this.units.push(u);
+  FX.addRing(u.pos.x, u.pos.y, 4*S, 30*S, 0.5, '235,120,90', 2);
+  return u;
+};
+
+// Волна крипов 3+1 — как в доте
+Game.spawnWave = function(laneIdx, team){
+  var D = CONFIG.dota, lane = Lanes[laneIdx];
+  var dir = team === TEAM.RADIANT ? 1 : -1;
+  var start = this.laneEndDist(lane, team) + dir * 12 * S;
+  var nMelee = D.waveMelee, nRanged = D.waveRanged;
+  if(this.diff.waveMelee) nMelee = this.diff.waveMelee;
+  if(this.diff.waveRanged) nRanged = this.diff.waveRanged;
+  for(var i=0;i<nMelee + nRanged;i++){
+    if(this.units.length >= (MOBILE ? Math.round(D.maxUnits * 0.72) : D.maxUnits)) return;
+    var isRanged = i >= nMelee;
+    var creep = new Unit({
+      kind: isRanged ? 'ranged' : 'melee',
+      team: team, laneIdx: laneIdx, dir: dir, roam:false,
+      dist: start - dir * i * 15 * S,
+      offset: rand(-7, 7) * S + (isRanged ? rand(-16, 16) * S : 0),
+      diff: this.diff
+    });
+    creep.dist = clamp(creep.dist, 0, lane.len);
+    pathAtOut(creep);
+    creep.spawnT = 0;
+    this.units.push(creep);
+  }
+};
+
+// ── Урон и смерть ──
+Game.dealDamage = function(u, amount, src, byUlt){
+  if(!u || u.dead) return 0;
+  var dmg = Math.max(1, Math.round(amount));
+  u.hp -= dmg;
+  u.hitFlash = 1;
+  if(byUlt) this.damageDealt += dmg;
+  if(u.hp <= 0){
+    u.hp = 0;
+    this.killUnit(u, src, byUlt);
+  }
+  return dmg;
+};
+
+Game.killUnit = function(u, src, byUlt){
+  if(u.dead) return;
+  u.dead = true;
+  var D = CONFIG.dota;
+  var scoring = (this.state === 'playing');   // в фоне меню бой идёт «молча»
+  FX.death(u);
+  SFX.death(u);
+
+  if(u.isTower){
+    FX.towerFall(u.pos.x, u.pos.y, u.r);
+    SFX.towerFall();
+    // вышка восстанавливается через время, чтобы арена не опустела
+    this.units.splice(this.units.indexOf(u), 1);
+    this.towerRespawns.push({ team:u.team, laneIdx:u.laneIdx, at:this.time + D.towerRespawn });
+    if(u.team === TEAM.DIRE){
+      if(scoring){
+        this.battle.towersDire++;
+        this.score += D.towerKillScore; this.xpGain += D.towerKillXp;
+        Ann.banner('ВЫШКА РАЗРУШЕНА', 'Tower destroyed', '#ffc247');
+      }
+    } else if(scoring){
+      this.battle.towersRadiant++;
+    }
+    return;
+  }
+
+  if(u.isHero){
+    // герой врага: убийство ультой = большой зачёт
+    if(byUlt) this.kills++;
+    this.units.splice(this.units.indexOf(u), 1);
+    this.heroRespawns.push({ at:this.time + CONFIG.restartDelay + rand(CONFIG.unit.respawnJitter[0], CONFIG.unit.respawnJitter[1]) });
+    if(byUlt && scoring){
+      this.killsHeroes++;
+      this.score += 150;
+      FX.addFloat(u.pos.x, u.pos.y - 30*S, 'УБИЙСТВО ГЕРОЯ +150', '#ffc247', 16*S);
+      Ann.banner('УБИЙСТВО ГЕРОЯ', 'Sun Strike по герою', '#ffc247');
+    }
+    if(scoring){
+      if(src && src.team === TEAM.DIRE) this.battle.direKills++;
+      else this.battle.radiantKills++;
+    }
+    return;
+  }
+
+  // крип
+  this.units.splice(this.units.indexOf(u), 1);
+  if(!scoring) return;
+  if(src && src.team === TEAM.RADIANT) this.battle.radiantKills++;
+  else if(src && src.team === TEAM.DIRE) this.battle.direKills++;
+  else if(byUlt) this.battle.radiantKills++;     // ульта игрока — это сторона Radiant
+  if(byUlt){
+    this.kills++;
+    this.killsCreeps++;
+    this.score += CONFIG.score.lastHitBonus;
+    this.xpGain += D.creepBounty;
+    SFX.lastHit();
+    FX.addFloat(u.pos.x, u.pos.y - 18*S, 'ДОБИЛ +' + CONFIG.score.lastHitBonus, '#9ee06a', 12*S);
+  }
+};
+
+// ── Sun Strike: радиус и урон честно зависят от уровня ульта ──
 Game.effectiveRadius = function(){
-  return CONFIG.strike.radius * this.diff.radiusMul * S;
+  var D = CONFIG.dota;
+  var units = (this.aghanim ? D.radiusScepterUnits : D.radiusUnits[(this.ultLevel || 1) - 1]);
+  return unitsToPx(units);
 };
+Game.strikeDamage = function(){
+  var D = CONFIG.dota;
+  var base = D.damage[(this.ultLevel || 1) - 1];
+  return base + (this.aghanim ? D.scepterDamageBonus : 0);
+};
+Game.isEnemy = function(u){ return u.team === TEAM.DIRE; };
+Game.damageable = function(u){ return this.isEnemy(u) && !u.isTower; };   // строения неуязвимы к ульте
 
-// ── Каст Sun Strike ──
+// ── Каст ──
 var outsideHintAt = -9;
 Game.cast = function(x, y){
   if(this.state !== 'playing' || this.countdownT > 0) return false;
-  // точка вне арены (полоса HUD сверху / тёмные поля в портрете) — каст не тратим
   var m = 12 * S;
   if(x < Field.x - m || x > Field.x + Field.w + m || y < Field.y - m || y > Field.y + Field.h + m){
-    if(this.time - outsideHintAt > 2.5){ outsideHintAt = this.time; UI.toast('Вне арены — целься по дорожкам'); }
+    if(this.time - outsideHintAt > 2.5){ outsideHintAt = this.time; UI.toast('Вне арены — целься по линиям'); }
     return false;
   }
-  var cd = CONFIG.strike.castCooldown * (this.diff.cooldownMul || 1);
+  var cd = CONFIG.strike.castCooldown;
   if(this.time - this.lastCast < cd) return false;
   if(this.casts.length >= CONFIG.strike.maxActive) return false;
   this.lastCast = this.time;
-  var me = this;
   this.casts.push({
     x:x, y:y, t:0,
     at:this.time + this.delay,
     radius:this.effectiveRadius(),
+    ultLevel:this.ultLevel, aghanim:this.aghanim,
     resolved:false,
-    // снимок позиций целей в момент каста (для показа «где цель была»)
-    snap:this.units.map(function(u){ return {id:u.id, x:u.pos.x, y:u.pos.y}; })
+    snap:this.units.map(function(u){ return { id:u.id, x:u.pos.x, y:u.pos.y }; })
   });
   this.castsN++;
+  this.mana = Math.max(0, (this.mana === undefined ? CONFIG.strike.manaMax : this.mana) - CONFIG.strike.manaCost);
   SFX.cast();
-  FX.addRing(x, y, 2*S, this.effectiveRadius()*1.5, 0.3, '255,200,110', 1.6);
-  for(var i=0;i<7;i++){
-    var a = rand(0,TAU);
-    FX.addPart(x + Math.cos(a)*10*S, y + Math.sin(a)*10*S, Math.cos(a)*rand(30,90)*S, Math.sin(a)*rand(30,90)*S - 20*S,
-               rand(0.2,0.4), rand(1.2,2.4)*S, '255,200,120','spark');
-  }
-  Save.saveThrottled(2500);   // не теряем прогресс, если игрок закроет вкладку посреди раунда
+  UI.castFx();
+  FX.addRing(x, y, 2*S, this.effectiveRadius()*1.4, 0.3, '255,200,110', 1.6);
+  Save.saveThrottled(2500);
   UI.syncHud();
   return true;
 };
 
-// разрешение каста: пришёл момент урона
+// Разрешение каста: пришёл момент урона
 Game.resolveCast = function(c){
-  var R = c.radius, best = null, bestD = 1e9, i, u, d;
-  // ближайшая цель (её и считаем «той, по которой били»)
+  var R = c.radius, i, u, d;
+  var rawDamage = CONFIG.dota.damage[c.ultLevel - 1] + (c.aghanim ? CONFIG.dota.scepterDamageBonus : 0);
+  var exactHp = !!Save.data.set.dotaHp;      // строгие дотерские HP/урон
+
+  // ближайшая ДОСТУПНАЯ для урона цель (герои/крипы врага)
+  var best = null, bestD = 1e9;
   for(i=0;i<this.units.length;i++){
     u = this.units[i];
+    if(!this.damageable(u)) continue;
     d = len(u.pos.x - c.x, u.pos.y - c.y);
     if(d < bestD){ bestD = d; best = u; }
   }
   // кто попал под зону
-  var killed = [];
+  var covered = [];
   for(i=0;i<this.units.length;i++){
     u = this.units[i];
-    if(len(u.pos.x - c.x, u.pos.y - c.y) <= R + u.r*0.35){ killed.push(u); }
+    if(!this.damageable(u)) continue;
+    if(len(u.pos.x - c.x, u.pos.y - c.y) <= R + u.r * CONFIG.dota.aoeHullFactor) covered.push(u);
   }
-  var hit = killed.length > 0;
+  // что ещё лежало в зоне (для подсказок): союзники и строения
+  var alliesIn = 0, buildingsIn = 0;
+  for(i=0;i<this.units.length;i++){
+    u = this.units[i];
+    if(len(u.pos.x - c.x, u.pos.y - c.y) > R + u.r * CONFIG.dota.aoeHullFactor) continue;
+    if(u.isTower) buildingsIn++;
+    else if(u.team === TEAM.RADIANT) alliesIn++;
+  }
+
+  var hit = covered.length > 0;
+  var heroHit = false;
+  for(i=0;i<covered.length;i++) if(covered[i].isHero) heroHit = true;
+  if(heroHit) this.heroHitsN++;
 
   FX.sunstrike(c.x, c.y, R);
-  SFX.impact();
+  SFX.sunstrike();
 
-  // ── урон по попавшим ──
-  for(i=0;i<killed.length;i++){
-    u = killed[i];
-    u.hp -= CONFIG.strike.damage;
-    u.hitFlash = 1;
-    // по ТЗ прямое попадание = килл: 900 урона гарантированно больше HP любой цели
-    if(u.hp <= 0) this.killUnit(u, c);
+  // ── урон ──
+  var killedNow = 0, killedHeroes = 0;
+  for(i=0;i<covered.length;i++){
+    u = covered[i];
+    // в обычном режиме ульта добивает (прямое попадание = килл), в «дотерском» — только дотерский урон
+    var applied = exactHp ? rawDamage : Math.max(rawDamage, u.hp);
+    this.dealDamage(u, applied, null, true);
+    if(u.dead){ killedNow++; if(u.isHero) killedHeroes++; }
+    else FX.addFloat(u.pos.x, u.pos.y - 22*S, '-' + rawDamage, '#ffd15c', 13*S);
   }
 
-  // ── аналитика ошибки ──
+  // ── аналитика ошибки (как раньше, но по доступным целям) ──
   var rec = null;
   if(best){
-    var vx = best.refDir.x, vy = best.refDir.y;               // «намеренное» направление движения
-    var ex = c.x - best.pos.x, ey = c.y - best.pos.y;         // вектор ошибки: куда упало vs где цель
-    var along = ex*vx + ey*vy;                                // >0 = перелёт, <0 = отставание
-    var perp  = -ex*vy + ey*vx;                               // боковая ошибка
+    var vx = best.refDir.x, vy = best.refDir.y;      // «намеренное» направление движения
+    var ex = c.x - best.pos.x, ey = c.y - best.pos.y;
+    var along = ex*vx + ey*vy;                        // >0 = перелёт, <0 = отставание
+    var perp  = -ex*vy + ey*vx;
     var spd = len(best.vel.x, best.vel.y);
-    var nominal = best.baseSpeed;
-    var stopped = spd < nominal * 0.30;
+    var stopped = spd < best.baseSpeed * 0.30;
     var snap = null;
     for(i=0;i<c.snap.length;i++) if(c.snap[i].id === best.id) snap = c.snap[i];
     rec = {
-      x:c.x, y:c.y,                       // куда кликнул
-      ux:best.pos.x, uy:best.pos.y,       // где цель в момент удара
-      cx:snap ? snap.x : best.pos.x, cy:snap ? snap.y : best.pos.y,  // где цель была в момент каста
+      x:c.x, y:c.y, ux:best.pos.x, uy:best.pos.y,
+      cx:snap ? snap.x : best.pos.x, cy:snap ? snap.y : best.pos.y,
       along:along, perp:perp, dist:bestD, hit:hit, stopped:stopped,
-      timeErr: nominal > 1 ? along / nominal : 0,
-      type:best.type, speed:spd, mult:1
+      timeErr: best.baseSpeed > 1 ? along / best.baseSpeed : 0,
+      kind:best.kind, isHero:best.isHero, speed:spd, mult:1
     };
   }
 
@@ -1189,42 +1785,47 @@ Game.resolveCast = function(c){
     this.streak++;
     if(this.streak > this.bestStreak) this.bestStreak = this.streak;
     this.mult = Math.min(CONFIG.score.multMax, 1 + Math.floor(this.streak / CONFIG.score.multStep) * CONFIG.score.multStepVal);
-    var target = killed[0] || best;
+    var target = covered[0];
     var sp = target ? len(target.vel.x, target.vel.y) : 0;
     var bonus = Math.round(CONFIG.score.speedBonus * clamp(sp / (CONFIG.score.speedRef * S), 0, 1));
     var centre = (rec && rec.dist < R*0.2) ? CONFIG.score.centreBonus : 0;
     var gain = Math.round((CONFIG.score.base + bonus + centre) * this.mult);
     this.score += gain;
-    this.kills += killed.length;
     if(rec) rec.mult = this.mult;
-    // всплывашки
-    for(i=0;i<killed.length;i++){
-      var ku = killed[i];
-      FX.addFloat(ku.pos.x, ku.pos.y - 26*S, '-' + CONFIG.strike.damage, '#ffd15c', 15*S);
-    }
     FX.addFloat(c.x, c.y - 46*S, '+' + gain + (this.mult > 1 ? '  ×' + String(this.mult).replace('.', ',') : ''), '#9ee06a', 16*S);
-    if(killed.length > 1) FX.addFloat(c.x, c.y - 70*S, 'ДВОЙНОЕ! +' + killed.length, '#ffc247', 17*S);
-    if(this.streak % CONFIG.score.multStep === 0){
-      SFX.streak(this.streak);
-      FX.addFloat(c.x, c.y - 92*S, 'СТРИК ' + this.streak + '  ×' + fmt1(this.mult), '#ff9a3c', 18*S);
-      FX.addRing(c.x, c.y, R*0.6, R*2.2, 0.5, '255,170,60', 2.6);
-    }
+    this.xpGain += CONFIG.score.xpPerHit + Math.round(this.damageDealt * CONFIG.score.xpPerDamage * 0.1);
     SFX.hit(clamp(1 + Math.floor(this.streak/6)*0.08, 1, 1.5));
-    // XP
-    var xp = CONFIG.score.xpPerKill * killed.length + CONFIG.score.xpPerHit;
-    this.xpGain += xp;
+
+    // мультикилл в окне 18 с (как в доте) + за одно попадание
+    if(this.time < this.multiUntil) this.multiCount += killedNow;
+    else this.multiCount = killedNow;
+    this.multiUntil = this.time + CONFIG.ann.multiWindow;
+    if(killedNow >= 2) this.multiCount = Math.max(this.multiCount, killedNow);
+    Ann.checkMulti(this.multiCount, this.time);
+
+    // стрик-аннонсер
+    Ann.checkStreak(this.streak);
     UI.flashStreak(this.streak);
   } else {
-    this.streak = 0; this.mult = 1;
     SFX.miss();
-    if(!best) FX.addFloat(c.x, c.y - 26*S, 'нет цели в поле', '#d9a08e', Math.max(11, 13*S));
+    this.streak = 0; this.mult = 1;
+    Ann.resetStreak(); Ann.resetMulti();
+    this.multiCount = 0;
     FX.miss(c.x, c.y, R);
+    // подсказка, если зона накрыла только союзников или строение
+    if(!best && buildingsIn){
+      FX.addFloat(c.x, c.y - 24*S, 'СТРОЕНИЕ НЕУЯЗВИМО', '#ffc247', 13*S);
+    } else if(!best && alliesIn){
+      FX.addFloat(c.x, c.y - 24*S, 'СВОИХ НЕ БЬЁТ', '#d9a08e', 13*S);
+    } else if(best){
+      FX.addFloat(c.x, c.y - 24*S, Math.round(bestD / S) + ' px мимо', '#d9a08e', 13*S);
+    }
   }
 
-  // ── копим статистику ──
+  // ── статистика ──
   if(rec){
     this.records.push({ t:this.time, along:rec.along, dist:rec.dist, hit:hit, perp:rec.perp,
-                        timeErr:rec.timeErr, stopped:rec.stopped });
+                        timeErr:rec.timeErr, stopped:rec.stopped, kind:rec.kind });
     this.allDistSum += rec.dist; this.allDistN++;
     if(!hit){ this.missSum += rec.dist; this.missN++; }
     if(!rec.stopped){ this.timeErrSum += Math.abs(rec.timeErr); this.timeErrN++; }
@@ -1232,48 +1833,60 @@ Game.resolveCast = function(c){
     rec.hint = Game.errorHint(rec, R);
     rec.until = this.time + CONFIG.strike.revealTime;
     this.reviews.push(rec);
-    while(this.reviews.length > 4) this.reviews.shift();   // не засоряем экран разборами
+    while(this.reviews.length > 4) this.reviews.shift();
   } else {
-    this.records.push({ t:this.time, along:0, dist:-1, hit:false, perp:0, timeErr:0, stopped:true });
+    this.records.push({ t:this.time, along:0, dist:-1, hit:false, perp:0, timeErr:0, stopped:true, kind:'none' });
   }
   UI.syncHud();
 };
-
 // Человеческая расшифровка ошибки упреждения
 Game.errorHint = function(r, R){
-  var px = Math.round(Math.abs(r.along) / S);      // снос по курсу в «дизайн-px»
-  var off = Math.round(r.dist / S);                // полная ошибка
+  var px = Math.round(Math.abs(r.along) / S);
+  var off = Math.round(r.dist / S);
   if(r.hit){
+    if(r.kind === 'hero') return 'Sun Strike по герою — ' + off + ' px от центра';
     if(r.dist < R*0.18) return 'Идеально в центр, полный урон';
     return 'Попадание, но ' + off + ' px от цели — можно точнее';
   }
-  if(r.stopped) return 'Цель встала — кладите ровно в неё, упреждение не нужно';
+  if(r.stopped) return 'Цель стояла — кладите ровно в неё, упреждение не нужно';
   if(Math.abs(r.along) < 14*S && Math.abs(r.perp) > 14*S)
     return 'Снос в бок: веди упреждение строго вдоль курса цели';
-  if(r.along > 14*S) return 'УПРЕЖДАЙ МЕНЬШЕ: смести точку на ~' + px + ' px назад по курсу';
-  if(r.along < -14*S) return 'УПРЕЖДАЙ БОЛЬШЕ: смести точку на ~' + px + ' px вперёд по курсу';
+  if(r.along > 14*S) return 'ПЕРЕЛЁТ: упреждай МЕНЬШЕ — смести точку на ~' + px + ' px назад по курсу';
+  if(r.along < -14*S) return 'ОТСТАВАНИЕ: упреждай БОЛЬШЕ — смести точку на ~' + px + ' px вперёд по курсу';
   return 'Почти по курсу, но мимо: ' + off + ' px';
 };
 
-Game.killUnit = function(u, c){
-  u.hp = 0; u.dead = true;
-  FX.kill(u.pos.x, u.pos.y, this.effectiveRadius()*0.6);
-  for(var i=0;i<10;i++){
-    var a = rand(0,TAU);
-    FX.addPart(u.pos.x, u.pos.y, Math.cos(a)*rand(40,170)*S, Math.sin(a)*rand(40,170)*S, rand(0.4,0.9),
-               rand(2,4.4)*S, u.isHero ? '200,120,255' : '120,200,90', 'smoke');
+// Волны крипов и респавны — общий код для раунда и для фона в меню
+Game.upkeep = function(dt){
+  var i;
+  if(this.time >= this.nextWave){
+    for(var L=0; L<Lanes.length; L++){
+      this.spawnWave(L, TEAM.RADIANT);
+      this.spawnWave(L, TEAM.DIRE);
+    }
+    this.nextWave += CONFIG.dota.waveInterval * (this.diff.waveMul || 1);
   }
-  // очередь на респавн
-  var U = CONFIG.unit;
-  this.respawns.push({ at:this.time + CONFIG.restartDelay + rand(U.respawnJitter[0], U.respawnJitter[1]), type:u.type });
+  for(i=this.heroRespawns.length-1;i>=0;i--){
+    if(this.time >= this.heroRespawns[i].at){
+      this.heroRespawns.splice(i,1);
+      var heroesAlive = 0;
+      for(var k=0;k<this.units.length;k++) if(this.units[k].isHero) heroesAlive++;
+      if(heroesAlive < this.diff.heroes) this.spawnHero(randInt(0, Lanes.length-1));
+    }
+  }
+  for(i=this.towerRespawns.length-1;i>=0;i--){
+    if(this.time >= this.towerRespawns[i].at){
+      var tr = this.towerRespawns.splice(i,1)[0];
+      this.spawnTower(tr.team, tr.laneIdx);
+    }
+  }
 };
 
 Game.update = function(dt){
   var i;
   FX.update(dt);
+  // отсчёт перед стартом: мир замер, время раунда не идёт
   if(this.state !== 'playing') return;
-
-  // отсчёт перед стартом: мир ещё не двигается и время раунда НЕ идёт
   if(this.countdownT > 0){
     var prev = Math.ceil(this.countdownT);
     this.countdownT -= dt;
@@ -1284,59 +1897,33 @@ Game.update = function(dt){
     UI.syncHud();
     return;
   }
-  this.time += dt;   // с этого момента тикает таймер раунда
+  this.time += dt;
+  this.mana = Math.min(CONFIG.strike.manaMax, (this.mana === undefined ? CONFIG.strike.manaMax : this.mana) + CONFIG.strike.manaRegen * dt);
 
-  // цели
+  // ── юниты ──
   for(i=this.units.length-1;i>=0;i--){
     var u = this.units[i];
     u.update(dt, this.time);
-    if(u.dead) this.units.splice(i,1);
+    if(u.dead && this.units[i] === u) this.units.splice(i,1);
   }
-  // респавн убитых
-  for(i=this.respawns.length-1;i>=0;i--){
-    var r = this.respawns[i];
-    if(this.time >= r.at){
-      this.respawns.splice(i,1);
-      if(this.units.length < this.diff.count) this.spawnOne(r.type);
-    }
-  }
-  // не даём полю опустеть
-  if(this.units.length === 0 && this.respawns.length === 0){
-    this.spawnOne(this.spawnType(0));
-  }
-
+  this.upkeep(dt);
   this.updateCasts(dt);
 
   // разборы кастов живут ограниченное время
-  for(i=this.reviews.length-1;i>=0;i--){
-    if(this.time >= this.reviews[i].until) this.reviews.splice(i,1);
+  for(i=this.reviews.length-1;i>=0;i--) if(this.time >= this.reviews[i].until) this.reviews.splice(i,1);
+  // надписи аннонсера
+  for(i=this.banners.length-1;i>=0;i--){
+    this.banners[i].t += dt;
+    if(this.banners[i].t >= this.banners[i].life) this.banners.splice(i,1);
+  }
+  // угольки на выжженной земле
+  var ds = FX.decals();
+  for(i=0;i<ds.length;i++){
+    if(Math.random() < dt * 6) FX.emberTick(ds[i].x, ds[i].y, ds[i].r);
   }
 
-  // таймер раунда
-  if(this.time >= this.endAt && this.state === 'playing') this.endRound();
-
+  if(this.time >= this.endAt) this.endRound();
   UI.syncHud();
-};
-
-Game.spawnOne = function(type){
-  type = type || this.spawnType(0);
-  // выбираем дорожку так, чтобы цели распределялись равномерно
-  var counts = new Array(Lanes.length).fill(0);
-  for(var i=0;i<this.units.length;i++) counts[this.units[i].laneIdx]++;
-  var bestLane = 0;
-  for(var j=1;j<counts.length;j++) if(counts[j] < counts[bestLane]) bestLane = j;
-  var u = new Unit(type, this.diff, bestLane, chance(0.5));
-  // если на этой дорожке уже кто-то есть рядом — отодвинем
-  for(var k=0;k<this.units.length;k++){
-    var o = this.units[k];
-    if(o.laneIdx === u.laneIdx && Math.abs(o.dist - u.dist) < CONFIG.lanes.minGap * S){
-      u.dist = clamp(u.dist + CONFIG.lanes.minGap * S * (u.dir > 0 ? 1 : -1), 10*S, u.lane.len - 10*S);
-    }
-  }
-  pathAtOut(u);
-  this.units.push(u);
-  FX.addRing(u.pos.x, u.pos.y, 2*S, 26*S, 0.4, u.isHero ? '190,120,255' : '120,200,90', 1.6);
-  return u;
 };
 
 Game.updateCasts = function(dt){
@@ -1355,15 +1942,15 @@ Game.updateCasts = function(dt){
 
 Game.endRound = function(){
   this.state = 'results';
-  // касты, чей удар не успел прийти до конца раунда, не считаем — иначе точность падает ни за что
   for(var pc=0; pc<this.casts.length; pc++) if(!this.casts[pc].resolved) this.castsN--;
   this.casts.length = 0;
   SFX.roundEnd();
-  // итоговый XP
   var xp = this.xpGain + CONFIG.score.xpPerRound;
   var ups = Save.addXp(xp);
   var d = Save.data;
   d.rounds++; d.kills += this.kills; d.casts += this.castsN; d.hits += this.hitsN;
+  d.heroHits = (d.heroHits || 0) + this.heroHitsN;
+  d.damage += this.damageDealt;
   var acc = this.castsN ? this.hitsN / this.castsN : 0;
   var newAcc = acc > d.bestAcc;
   var newScore = this.score > d.bestScore;
@@ -1377,25 +1964,32 @@ Game.endRound = function(){
 
 Game.stats = function(){
   var casts = this.castsN || 0, hits = this.hitsN || 0;
-  // систематический снос: средние along/perp по несдвинутым (двигавшимся) целям
-  var aSum = 0, pSum = 0, an = 0;
-  for(var i=0;i<this.records.length;i++){
-    var r = this.records[i];
+  var aSum = 0, pSum = 0, an = 0, i, r;
+  for(i=0;i<this.records.length;i++){
+    r = this.records[i];
     if(r.dist < 0 || r.stopped) continue;
     aSum += r.along; pSum += r.perp; an++;
   }
   return {
     acc: casts ? hits/casts : 0,
-    casts: casts, hits: hits, kills: this.kills,
+    heroAcc: casts ? this.heroHitsN/casts : 0,
+    casts: casts, hits: hits, heroHits: this.heroHitsN,
+    kills: this.kills, killsHeroes: this.killsHeroes, killsCreeps: this.killsCreeps,
     streak: this.streak, best: this.bestStreak, score: this.score, mult: this.mult,
-    avgMiss: this.missN ? this.missSum / this.missN / S : -1,        // средний промах (только промахи), дизайн-px
-    avgDist: this.allDistN ? this.allDistSum / this.allDistN / S : -1, // средняя ошибка по всем кастам
-    avgTimeErr: this.timeErrN ? this.timeErrSum / this.timeErrN : -1, // средняя ошибка во времени, сек
-    meanAlong: an ? aSum / an / S : 0,    // средний снос по курсу, дизайн-px (+ перелёт, − отставание)
-    meanPerp: an ? pSum / an / S : 0,     // средний боковой снос, дизайн-px
-    movedN: an                            // по скольким кастам считался снос (цели, которые двигались)
+    damage: this.damageDealt,
+    avgMiss: this.missN ? this.missSum / this.missN / S : -1,
+    avgDist: this.allDistN ? this.allDistSum / this.allDistN / S : -1,
+    avgTimeErr: this.timeErrN ? this.timeErrSum / this.timeErrN : -1,
+    meanAlong: an ? aSum / an / S : 0,
+    meanPerp: an ? pSum / an / S : 0,
+    movedN: an,
+    battle: this.battle
   };
 };
+
+// списки респавнов создаются в reset()
+Game.heroRespawns = [];
+Game.towerRespawns = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  9. Рендер: земля (кэш в offscreen-canvas), дорожки, туман, юниты, эффекты
@@ -1413,22 +2007,29 @@ function resize(){
   canvas.style.height = h + 'px';
   W = w; H = h;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // рисуем в CSS-px
+  var prevLaneLen = [];
+  for(var pl=0; pl<Lanes.length; pl++) prevLaneLen.push(Lanes[pl].len);
   computeScale();
+  rebuildScales();          // px на юнит доты (радиус Sun Strike считается от него)
   rebuildField();
   rebuildLanes();
   var n = Save.data.set.diff;
-  if(Game.state === 'playing' || Game.state === 'paused'){
-    // на ресайзе аккуратно переселяем юнитов, сохраняя прогресс
+  // на ресайзе аккуратно переселяем юнитов, сохраняя прогресс боя
+  if(Game.units.length){
     for(var i=0;i<Game.units.length;i++){
       var u = Game.units[i];
-      u.lane = Lanes[u.laneIdx % Lanes.length];
-      u.r = (u.isHero ? CONFIG.unit.heroR : CONFIG.unit.creepR) * S;
-      u.dist = clamp(u.dist / (u.lane.len || 1) * u.lane.len, 0, u.lane.len);
+      var li = u.laneIdx % Lanes.length;
+      var ratio = (prevLaneLen[li] ? Lanes[li].len / prevLaneLen[li] : 1);
+      u.laneIdx = li;
+      u.lane = Lanes[li];
+      u.dist = clamp(u.dist * ratio, 0, u.lane.len);
+      recomputeUnitScale(u);
       pathAtOut(u);
       u.trail.length = 0;
     }
   }
   drawGroundCache();
+  buildOverlayCache();      // деревья/камни поверх юнитов — объёмный декор
   buildFogCache();
   Game.diff = DIFFICULTIES[Game.state === 'menu' ? n : Game.diff.id];
 }
@@ -1437,7 +2038,7 @@ function resize(){
 function drawGroundCache(){
   ground.width = Math.max(1, Math.floor(W * dpr));
   ground.height = Math.max(1, Math.floor(H * dpr));
-  var g = gctx;
+  var g = gctx, i, j;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0,0,W,H);
 
@@ -1448,9 +2049,35 @@ function drawGroundCache(){
   bg.addColorStop(1, '#0a0d08');
   g.fillStyle = bg; g.fillRect(0,0,W,H);
 
+  // ── река: диагональная полоса через угол карты (как в доте) ──
+  g.save();
+  g.beginPath();
+  var rw = Field.h * 0.34;
+  g.moveTo(-40, Field.y + Field.h + 40);
+  g.lineTo(Field.x + Field.w * 0.30, -40);
+  g.lineTo(Field.x + Field.w * 0.30 + rw, -40);
+  g.lineTo(-40, Field.y + Field.h + 40 + rw * 0.55);
+  g.closePath();
+  g.clip();
+  var wg = g.createLinearGradient(0, Field.y + Field.h, Field.x + Field.w * 0.4, 0);
+  wg.addColorStop(0, 'rgba(28,62,74,0.55)');
+  wg.addColorStop(0.5, 'rgba(40,86,96,0.42)');
+  wg.addColorStop(1, 'rgba(24,52,64,0.5)');
+  g.fillStyle = wg; g.fillRect(0,0,W,H);
+  // блики на воде
+  g.globalAlpha = 0.25;
+  for(i=0;i<40;i++){
+    g.strokeStyle = 'rgba(180,235,245,0.5)';
+    g.lineWidth = rand(1,2.2)*S;
+    var wx = rand(-40, Field.x + Field.w*0.45), wy = rand(Field.y + Field.h*0.35, H + 40);
+    g.beginPath(); g.moveTo(wx, wy); g.lineTo(wx + rand(18,60)*S, wy - rand(8,26)*S); g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.restore();
+
   // крупные пятна земли/травы
   var spots = clamp(Math.round((W*H)/16000), 40, 220);
-  for(var i=0;i<spots;i++){
+  for(i=0;i<spots;i++){
     var x = Math.random()*W, y = Math.random()*H;
     var r = rand(40, 190) * S;
     var grd = g.createRadialGradient(x,y,0,x,y,r);
@@ -1462,8 +2089,8 @@ function drawGroundCache(){
     g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
   }
   // пыльные разводы
-  g.globalAlpha = 0.25;
-  for(var j=0;j<clamp(Math.round((W*H)/90000), 8, 40);j++){
+  g.globalAlpha = 0.22;
+  for(j=0;j<clamp(Math.round((W*H)/90000), 8, 40);j++){
     g.strokeStyle = 'rgba(90,74,44,0.35)';
     g.lineWidth = rand(1,3)*S;
     g.beginPath();
@@ -1474,22 +2101,81 @@ function drawGroundCache(){
   }
   g.globalAlpha = 1;
 
-  // дорожки (протоптанная земля) — берём из Lanes
+  // ── линии (протоптанные дороги) ──
   for(var li=0; li<Lanes.length; li++){
     var lane = Lanes[li];
     g.lineCap = 'round'; g.lineJoin = 'round';
     g.strokeStyle = 'rgba(86,70,42,0.30)';
     g.lineWidth = CONFIG.lanes.roadWidth * S;
-    strokePath(g, lane, 12*S);
+    strokePath(g, lane);
     g.strokeStyle = 'rgba(120,100,60,0.16)';
     g.lineWidth = CONFIG.lanes.roadWidth * 0.45 * S;
-    strokePath(g, lane, 12*S);
-    // пунктирный «маршрут» — помогает читать путь
+    strokePath(g, lane);
     g.setLineDash([9*S, 15*S]);
     g.strokeStyle = 'rgba(190,170,110,0.14)';
     g.lineWidth = 1.6*S;
-    strokePath(g, lane, 12*S);
+    strokePath(g, lane);
     g.setLineDash([]);
+  }
+
+  // ── тени деревьев, камни и руны (декор плоскости) ──
+  var D = CONFIG.fx;
+  for(i=0;i<D.trees;i++){
+    var t = treeSpots[i];
+    if(!t) continue;
+    // тень от кроны (смещена — намёк на высоту)
+    g.beginPath();
+    g.ellipse(t.x + t.h*0.35, t.y + t.h*0.18, t.r*1.15, t.r*0.6, 0, 0, TAU);
+    g.fillStyle = 'rgba(0,0,0,0.34)';
+    g.fill();
+    // ствол
+    g.beginPath();
+    g.moveTo(t.x - t.r*0.16, t.y); g.lineTo(t.x + t.r*0.16, t.y);
+    g.lineTo(t.x + t.r*0.10, t.y - t.h*0.5); g.lineTo(t.x - t.r*0.10, t.y - t.h*0.5);
+    g.closePath();
+    g.fillStyle = '#3a2a1b'; g.fill();
+  }
+  for(i=0;i<D.rocks;i++){
+    var rk = rockSpots[i];
+    if(!rk) continue;
+    g.beginPath();
+    g.ellipse(rk.x + rk.s*0.3, rk.y + rk.s*0.25, rk.s*1.1, rk.s*0.55, 0, 0, TAU);
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fill();
+    g.beginPath();
+    var rp = rk.s;
+    g.moveTo(rk.x - rp, rk.y + rp*0.4);
+    g.lineTo(rk.x - rp*0.5, rk.y - rp*0.8);
+    g.lineTo(rk.x + rp*0.4, rk.y - rp);
+    g.lineTo(rk.x + rp, rk.y + rp*0.3);
+    g.lineTo(rk.x + rp*0.2, rk.y + rp*0.6);
+    g.closePath();
+    var rg = g.createLinearGradient(rk.x, rk.y - rp, rk.x, rk.y + rp);
+    rg.addColorStop(0, '#6d6a60');
+    rg.addColorStop(1, '#3b3a33');
+    g.fillStyle = rg; g.fill();
+    g.strokeStyle = 'rgba(18,18,16,0.8)'; g.lineWidth = 1.2; g.stroke();
+  }
+  // руны на земле (декор в духе доты)
+  for(i=0;i<Lanes.length;i++){
+    var l = Lanes[i];
+    for(j=0;j<2;j++){
+      var p = pathAt(l, l.len * (0.3 + j*0.4));
+      var ox = 26*S * (j ? 1 : -1);
+      g.save();
+      g.translate(p.x + p.nx*ox, p.y + p.ny*ox);
+      g.rotate(Math.atan2(p.ty, p.tx));
+      g.strokeStyle = 'rgba(200,170,90,0.16)';
+      g.lineWidth = 1.4*S;
+      g.beginPath(); g.arc(0, 0, 9*S, 0, TAU); g.stroke();
+      g.beginPath(); g.arc(0, 0, 4.5*S, 0, TAU); g.stroke();
+      for(var a=0;a<3;a++){
+        g.beginPath();
+        g.moveTo(Math.cos(a*2.09)*4.5*S, Math.sin(a*2.09)*4.5*S);
+        g.lineTo(Math.cos(a*2.09 + 2.09)*4.5*S, Math.sin(a*2.09 + 2.09)*4.5*S);
+        g.stroke();
+      }
+      g.restore();
+    }
   }
 
   // рамка полигона
@@ -1502,7 +2188,8 @@ function drawGroundCache(){
   }
 }
 
-function strokePath(g, lane, inset){
+// Обводка ломаной линии (используется при отрисовке дорог)
+function strokePath(g, lane){
   g.beginPath();
   g.moveTo(lane.pts[0].x, lane.pts[0].y);
   for(var i=1;i<lane.pts.length;i++) g.lineTo(lane.pts[i].x, lane.pts[i].y);
@@ -1518,7 +2205,6 @@ function buildFogCache(){
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0,0,W,H);
 
-  // верх/низ
   var grd = g.createLinearGradient(0, Field.y - 40*S, 0, Field.y + Field.h*0.22);
   grd.addColorStop(0, 'rgba(3,5,4,0.95)');
   grd.addColorStop(1, 'rgba(3,5,4,0)');
@@ -1527,7 +2213,6 @@ function buildFogCache(){
   grd.addColorStop(0, 'rgba(3,5,4,0.95)');
   grd.addColorStop(1, 'rgba(3,5,4,0)');
   g.fillStyle = grd; g.fillRect(0, Field.y + Field.h*0.78, W, H - (Field.y + Field.h*0.78));
-  // лево/право
   grd = g.createLinearGradient(Field.x - 30*S, 0, Field.x + Field.w*0.13, 0);
   grd.addColorStop(0, 'rgba(3,5,4,0.93)');
   grd.addColorStop(1, 'rgba(3,5,4,0)');
@@ -1536,11 +2221,9 @@ function buildFogCache(){
   grd.addColorStop(0, 'rgba(3,5,4,0.93)');
   grd.addColorStop(1, 'rgba(3,5,4,0)');
   g.fillStyle = grd; g.fillRect(Field.x + Field.w*0.87, 0, W - (Field.x + Field.w*0.87), H);
-  // лёгкая дымка по всему полю
   g.fillStyle = 'rgba(6,10,8,0.15)';
   g.fillRect(0,0,W,H);
 }
-
 function drawFog(){
   var f = Game.diff.fog || 0;
   if(f <= 0) return;
@@ -1551,173 +2234,585 @@ function drawFog(){
   ctx.restore();
 }
 
+// ── Декор поверх юнитов: объёмные кроны деревьев и валуны ──
+var overlay = document.createElement('canvas');
+var octx = overlay.getContext('2d');
+var treeSpots = [], rockSpots = [];
+// Точки вышек: декор не должен их перекрывать (иначе башни не видно)
+function towerSpotsList(){
+  var out = [];
+  for(var L=0; L<Lanes.length; L++){
+    out.push(pathAt(Lanes[L], Lanes[L].len * 0.045));
+    out.push(pathAt(Lanes[L], Lanes[L].len * 0.955));
+  }
+  return out;
+}
+// Расстояние до ближайшей точки любой линии (для расстановки декора)
+function distToLanes(x, y){
+  var best = 1e9;
+  for(var L=0; L<Lanes.length; L++){
+    var lane = Lanes[L];
+    for(var k=0;k<lane.segs.length;k++){
+      var p0 = lane.pts[k], sg = lane.segs[k];
+      var vx = x - p0.x, vy = y - p0.y;
+      var t = clamp(vx*sg.ux + vy*sg.uy, 0, sg.l);
+      var dd = len(vx - sg.ux*t, vy - sg.uy*t);
+      if(dd < best) best = dd;
+    }
+  }
+  return best;
+}
 
-// ── Юниты ──
+function buildOverlayCache(){
+  // расставляем деревья по краям арены и между линиями
+  treeSpots = []; rockSpots = [];
+  var D = CONFIG.fx, i, x, y, ok;
+  var nTrees = MOBILE ? D.treesMobile : D.trees;
+  var nRocks = MOBILE ? D.rocksMobile : D.rocks;
+  var towers = towerSpotsList();
+  for(i=0;i<nTrees;i++){
+    var tries = 0;
+    do{
+      ok = true;
+      var side = Math.random();
+      if(side < 0.32){ x = rand(Field.x - 4*S, Field.x + Field.w*0.10); y = rand(Field.y + 6*S, Field.y + Field.h - 6*S); }
+      else if(side < 0.64){ x = rand(Field.x + Field.w*0.90, Field.x + Field.w + 4*S); y = rand(Field.y + 6*S, Field.y + Field.h - 6*S); }
+      else if(side < 0.82){ x = rand(Field.x, Field.x + Field.w); y = rand(Field.y + 2*S, Field.y + Field.h*0.07); }
+      else { x = rand(Field.x, Field.x + Field.w); y = rand(Field.y + Field.h*0.93, Field.y + Field.h - 2*S); }
+      // не сажаем дерево на линию, у вышки и не залипаем в цикле
+      if(distToLanes(x, y) < 34*S) ok = false;
+      if(ok){
+        for(var T=0; T<towers.length; T++){
+          if(len(towers[T].x - x, towers[T].y - y) < 92*S){ ok = false; break; }
+        }
+      }
+      tries++;
+    } while(!ok && tries < 14);
+    var tr = rand(13, 21) * S;
+    treeSpots.push({ x:x, y:y, r:tr, h:tr*rand(2.1, 3.0), seed:rand(0,1), sway:rand(0.5,1.4) });
+  }
+  for(i=0;i<nRocks;i++){
+    // камни — ближе к краям арены и подальше от линий, чтобы не засорять поле
+    var rx, ry, rTries = 0;
+    do{
+      rx = rand(Field.x + 10*S, Field.x + Field.w - 10*S);
+      ry = rand(Field.y + 10*S, Field.y + Field.h - 10*S);
+      rTries++;
+    } while(distToLanes(rx, ry) < 46*S && rTries < 10);
+    rockSpots.push({ x: rx, y: ry, s: rand(5, 11) * S, seed: rand(0,1) });
+  }
+
+  overlay.width = Math.max(1, Math.floor(W * dpr));
+  overlay.height = Math.max(1, Math.floor(H * dpr));
+  var g = octx;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0,0,W,H);
+
+  // валуны (объём: тёмное основание + подсвеченная верхушка)
+  for(i=0;i<rockSpots.length;i++){
+    var rk = rockSpots[i], rp = rk.s;
+    g.beginPath();
+    g.moveTo(rk.x - rp, rk.y + rp*0.45);
+    g.lineTo(rk.x - rp*0.55, rk.y - rp*0.85);
+    g.lineTo(rk.x + rp*0.35, rk.y - rp*1.05);
+    g.lineTo(rk.x + rp, rk.y + rp*0.3);
+    g.lineTo(rk.x + rp*0.15, rk.y + rp*0.65);
+    g.closePath();
+    var rg2 = g.createLinearGradient(rk.x - rp, rk.y - rp, rk.x + rp, rk.y + rp);
+    rg2.addColorStop(0, '#5d5a52'); rg2.addColorStop(0.55, '#3d3c35'); rg2.addColorStop(1, '#2a2924');
+    g.fillStyle = rg2; g.fill();
+    g.strokeStyle = 'rgba(12,12,10,0.85)'; g.lineWidth = 1.2; g.stroke();
+  }
+
+  // деревья: несколько ярусов кроны с подсветкой сверху
+  for(i=0;i<treeSpots.length;i++){
+    var t = treeSpots[i], r = t.r, h = t.h;
+    // ствол
+    g.beginPath();
+    g.moveTo(t.x - r*0.20, t.y);
+    g.lineTo(t.x + r*0.20, t.y);
+    g.lineTo(t.x + r*0.12, t.y - h*0.55);
+    g.lineTo(t.x - r*0.12, t.y - h*0.55);
+    g.closePath();
+    var tg = g.createLinearGradient(t.x - r*0.2, 0, t.x + r*0.2, 0);
+    tg.addColorStop(0, '#4a3620'); tg.addColorStop(0.45, '#6b4d2c'); tg.addColorStop(1, '#33240f');
+    g.fillStyle = tg; g.fill();
+    g.strokeStyle = 'rgba(16,12,6,0.85)'; g.lineWidth = 1.1; g.stroke();
+    // крона: 3 яруса (низ тёмный → верх светлый)
+    for(var layer=0; layer<3; layer++){
+      var ly = t.y - h*0.55 - layer*h*0.17;
+      var lr = r * (1.35 - layer*0.26);
+      var lh = h*0.34;
+      g.beginPath();
+      g.moveTo(t.x - lr, ly + lh*0.25);
+      g.quadraticCurveTo(t.x - lr*0.75, ly - lh*0.55, t.x, ly - lh*0.62);
+      g.quadraticCurveTo(t.x + lr*0.75, ly - lh*0.55, t.x + lr, ly + lh*0.25);
+      g.quadraticCurveTo(t.x, ly + lh*0.05, t.x - lr, ly + lh*0.25);
+      g.closePath();
+      var cg2 = g.createLinearGradient(t.x - lr, ly - lh*0.6, t.x + lr, ly + lh*0.3);
+      var c1 = layer === 0 ? '#22401f' : (layer === 1 ? '#2c5226' : '#3a6730');
+      var c2 = layer === 0 ? '#142611' : (layer === 1 ? '#1b3417' : '#25461d');
+      cg2.addColorStop(0, c1); cg2.addColorStop(1, c2);
+      g.fillStyle = cg2; g.fill();
+      g.strokeStyle = 'rgba(10,20,8,0.75)'; g.lineWidth = 1; g.stroke();
+      // блик солнца на левой половине
+      g.beginPath();
+      g.ellipse(t.x - lr*0.35, ly - lh*0.18, lr*0.42, lh*0.30, -0.35, 0, TAU);
+      g.fillStyle = 'rgba(150,205,120,0.14)';
+      g.fill();
+    }
+  }
+}
+
+function drawOverlay(){
+  ctx.drawImage(overlay, 0, 0, W, H);
+}
+
+// ── Земляные следы: выжженная земля от ульты (рисуется до юнитов) ──
+function drawDecals(){
+  var ds = FX.decals();
+  for(var i=0;i<ds.length;i++){
+    var d = ds[i], life = clamp(1 - d.t/d.life, 0, 1);
+    var a = life > 0.75 ? 1 : life/0.75;
+    ctx.save();
+    ctx.globalAlpha = a;
+    // выжженный круг
+    var g = ctx.createRadialGradient(d.x, d.y, d.r*0.05, d.x, d.y, d.r);
+    g.addColorStop(0, 'rgba(40,26,12,0.85)');
+    g.addColorStop(0.55, 'rgba(30,20,10,0.65)');
+    g.addColorStop(1, 'rgba(20,14,8,0)');
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y, d.r, d.r*0.72, 0, 0, TAU);
+    ctx.fillStyle = g; ctx.fill();
+    // тлеющие трещины
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(255,130,40,' + (0.5*a) + ')';
+    ctx.lineWidth = 1.4;
+    for(var k=0;k<6;k++){
+      var ang = k * 1.047 + d.t*0.1;
+      ctx.beginPath();
+      ctx.moveTo(d.x + Math.cos(ang)*d.r*0.15, d.y + Math.sin(ang)*d.r*0.11);
+      ctx.lineTo(d.x + Math.cos(ang + 0.25)*d.r*0.8, d.y + Math.sin(ang + 0.25)*d.r*0.58);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ── Трупики ──
+function drawCorpses(){
+  var cs = FX.corpses();
+  for(var i=0;i<cs.length;i++){
+    var c = cs[i], k = clamp(1 - c.t/c.life, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * k;
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.a);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, c.r*1.25, c.r*0.62, 0, 0, TAU);
+    ctx.fillStyle = c.team === TEAM.RADIANT ? 'rgba(70,110,50,0.9)' : 'rgba(120,55,40,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(12,10,8,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Юниты: крипы линий, герои и вышки ──
 function drawUnits(time){
-  var units = Game.units, labels = CONFIG.fx.unitLabels;
-  for(var i=0;i<units.length;i++){
-    var u = units[i], x = u.pos.x, y = u.pos.y, r = u.r;
+  var list = Game._drawOrder, labels = CONFIG.fx.unitLabels, hpBars = CONFIG.guide.hpBars;
+  for(var i=0;i<list.length;i++){
+    var u = list[i];
+    if(u.isTower){ drawTower(u, time); continue; }
+    var x = u.pos.x, y = u.pos.y, r = u.r;
+    // лёгкий «шаг вперёд» в момент удара
+    if(u.swing > 0){
+      var k = u.swing / CONFIG.unit.swingTime;
+      x += Math.cos(u.swingA) * r * 0.35 * k;
+      y += Math.sin(u.swingA) * r * 0.35 * k;
+    }
+    var spawn = easeOut(clamp(u.spawnT,0,1));
+
     // тень
     ctx.beginPath();
-    ctx.ellipse(x, y + r*0.45, r*1.30, r*0.62, 0, 0, TAU);
+    ctx.ellipse(u.pos.x + r*0.25, u.pos.y + r*0.5, r*1.35, r*0.62, 0, 0, TAU);
     ctx.fillStyle = 'rgba(0,0,0,0.42)';
     ctx.fill();
 
     // след движения
     if(u.trail.length > 1){
       for(var t=0;t<u.trail.length;t++){
-        var tp = u.trail[t], a = clamp(tp.t,0,1) * 0.20;
+        var tp = u.trail[t], ta = clamp(tp.t,0,1) * 0.18;
         ctx.beginPath();
         ctx.arc(tp.x, tp.y, r*0.42*(0.4 + tp.t*0.6), 0, TAU);
-        ctx.fillStyle = u.isHero ? 'rgba(178,120,255,' + a + ')' : 'rgba(140,200,90,' + a + ')';
+        ctx.fillStyle = u.team === TEAM.RADIANT ? 'rgba(140,220,110,' + ta + ')' : 'rgba(230,120,90,' + ta + ')';
         ctx.fill();
       }
     }
 
-    var spawn = easeOut(clamp(u.spawnT,0,1));
     ctx.save();
     ctx.globalAlpha = spawn;
 
-    if(u.type === 'creep'){
-      // ── КРИП: приземистое тело-ромб ──
+    if(u.isHero){
+      // ── ГЕРОЙ ВРАГА: плащ, наплечники, сияющая кромка ──
+      var ang = Math.atan2(u.refDir.y, u.refDir.x);
+      // плащ сзади
       ctx.beginPath();
-      ctx.moveTo(x, y - r*1.05);
-      ctx.lineTo(x + r*0.95, y);
-      ctx.lineTo(x, y + r*0.95);
-      ctx.lineTo(x - r*0.95, y);
+      ctx.moveTo(x - Math.cos(ang)*r*0.4, y - Math.sin(ang)*r*0.4);
+      ctx.arc(x, y, r*1.45, ang + 2.2, ang - 2.2, true);
       ctx.closePath();
-      var cg = ctx.createLinearGradient(x, y - r, x, y + r);
-      cg.addColorStop(0, '#8dc063');
-      cg.addColorStop(1, '#3f5c2c');
-      ctx.fillStyle = cg; ctx.fill();
-      ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(20,30,14,0.9)'; ctx.stroke();
-      // глаза-точки по направлению движения
-      ctx.fillStyle = '#12200c';
-      ctx.beginPath(); ctx.arc(x + u.refDir.x*r*0.30, y + u.refDir.y*r*0.28, r*0.14, 0, TAU); ctx.fill();
-    } else {
-      // ── ГЕРОЙ: круглое тело с «плащом» ──
+      var cgp = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+      cgp.addColorStop(0, '#7a2f28'); cgp.addColorStop(1, '#3a1512');
+      ctx.fillStyle = cgp; ctx.fill();
+      ctx.strokeStyle = 'rgba(20,8,6,0.9)'; ctx.lineWidth = 1.6; ctx.stroke();
+      // тело
       var hg = ctx.createRadialGradient(x - r*0.3, y - r*0.4, r*0.15, x, y, r*1.15);
-      hg.addColorStop(0, '#f2c8a0');
-      hg.addColorStop(0.55, '#c2703f');
-      hg.addColorStop(1, '#5e2a1c');
+      hg.addColorStop(0, '#f0c39c');
+      hg.addColorStop(0.55, '#b8643c');
+      hg.addColorStop(1, '#4d1f16');
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
       ctx.fillStyle = hg; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(24,12,8,0.95)'; ctx.stroke();
-      // наплечник-дуга указывает курс
-      var ang = Math.atan2(u.refDir.y, u.refDir.x);
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(22,8,6,0.95)'; ctx.stroke();
+      // «лицо» смотрит по курсу
       ctx.beginPath();
-      ctx.arc(x, y, r*0.62, ang - 1.15, ang + 1.15);
-      ctx.strokeStyle = 'rgba(255,196,110,0.85)'; ctx.lineWidth = 3; ctx.stroke();
-    }
-
-    // HP-полоска (у героя шире)
-    var hpw = r*2.1, hph = 3.4;
-    var hpx = x - hpw/2, hpy = y - r*1.85 - hph;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(hpx-1, hpy-1, hpw+2, hph+2);
-    var frac = clamp(u.hp / u.hpMax, 0, 1);
-    ctx.fillStyle = frac > 0.6 ? '#7fc35a' : (frac > 0.3 ? '#e0b23a' : '#d5432c');
-    ctx.fillRect(hpx, hpy, hpw*frac, hph);
-    if(!u.isHero){
-      // у крипа HP маленькое — рисуем тонкую отметку
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.fillRect(hpx, hpy + hph, hpw, 1);
-    }
-
-    // индикатор «стоит» — цель обманно замерла
-    if(u.speed < u.baseSpeed*0.25 && Game.countdownT <= 0){
-      ctx.beginPath(); ctx.arc(x, y, r*1.5, 0, TAU);
-      ctx.strokeStyle = 'rgba(230,220,120,0.35)'; ctx.lineWidth = 1.2;
-      ctx.setLineDash([3,4]); ctx.stroke(); ctx.setLineDash([]);
-    }
-    // рывок — след скорости
-    if(u.dash > 0){
+      ctx.arc(x + Math.cos(ang)*r*0.55, y + Math.sin(ang)*r*0.45, r*0.30, 0, TAU);
+      ctx.fillStyle = 'rgba(255,214,150,0.55)'; ctx.fill();
+      // наплечник-дуга указывает направление
+      ctx.beginPath();
+      ctx.arc(x, y, r*0.66, ang - 1.1, ang + 1.1);
+      ctx.strokeStyle = 'rgba(255,150,110,0.9)'; ctx.lineWidth = 3; ctx.stroke();
+      // аура враждебности
       ctx.beginPath(); ctx.arc(x, y, r*1.25, 0, TAU);
-      ctx.strokeStyle = 'rgba(255,150,60,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = 'rgba(230,90,70,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+    } else if(u.isRanged){
+      // ── РЕНДЖ-КРИП: посох и светящийся шар ──
+      var ag2 = Math.atan2(u.refDir.y, u.refDir.x);
+      var cg2 = ctx.createLinearGradient(x, y - r, x, y + r);
+      cg2.addColorStop(0, u.team === TEAM.RADIANT ? '#a9dc7a' : '#f0937a');
+      cg2.addColorStop(1, u.team === TEAM.RADIANT ? '#41632c' : '#6d2a1f');
+      ctx.beginPath();
+      ctx.moveTo(x, y - r*1.25);
+      ctx.lineTo(x + r*0.85, y - r*0.1);
+      ctx.lineTo(x + r*0.55, y + r*0.95);
+      ctx.lineTo(x - r*0.55, y + r*0.95);
+      ctx.lineTo(x - r*0.85, y - r*0.1);
+      ctx.closePath();
+      ctx.fillStyle = cg2; ctx.fill();
+      ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(16,22,12,0.9)'; ctx.stroke();
+      // посох
+      ctx.beginPath();
+      ctx.moveTo(x - Math.cos(ag2)*r*0.2, y - Math.sin(ag2)*r*0.2);
+      ctx.lineTo(x + Math.cos(ag2)*r*1.35, y + Math.sin(ag2)*r*1.35);
+      ctx.strokeStyle = 'rgba(90,70,45,0.95)'; ctx.lineWidth = 2.2*S + 1; ctx.stroke();
+      // шар на посохе: мигает при атаке
+      var pulse = 0.55 + 0.45*Math.sin(time*6 + u.id);
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(ag2)*r*1.4, y + Math.sin(ag2)*r*1.4, r*0.30*(0.8 + (u.swing>0 ? 0.9 : pulse*0.3)), 0, TAU);
+      ctx.fillStyle = u.team === TEAM.RADIANT ? 'rgba(190,255,160,' + (0.75) + ')' : 'rgba(255,180,150,0.8)';
+      ctx.fill();
+      // глаза
+      ctx.fillStyle = 'rgba(14,20,10,0.9)';
+      ctx.beginPath(); ctx.arc(x + u.refDir.x*r*0.28, y + u.refDir.y*r*0.24, r*0.13, 0, TAU); ctx.fill();
+    } else {
+      // ── МЕЛЕ-КРИП: приземистый боец со щитом и дубиной ──
+      var ag3 = Math.atan2(u.refDir.y, u.refDir.x);
+      // дубина (на стороне замаха)
+      var swingA = u.swing > 0 ? u.swingA - 0.9 * (u.swing / CONFIG.unit.swingTime) : ag3 + 0.5;
+      ctx.save();
+      ctx.translate(x + Math.cos(swingA)*r*1.15, y + Math.sin(swingA)*r*1.15);
+      ctx.rotate(swingA);
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(-r*0.18, -r*0.16, r*0.95, r*0.32, r*0.16) : ctx.rect(-r*0.18, -r*0.16, r*0.95, r*0.32);
+      ctx.fillStyle = '#6b4a2a'; ctx.fill();
+      ctx.strokeStyle = 'rgba(20,14,8,0.9)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+      // тело
+      var mg = ctx.createLinearGradient(x, y - r, x, y + r);
+      mg.addColorStop(0, u.team === TEAM.RADIANT ? '#93c866' : '#e08a70');
+      mg.addColorStop(0.6, u.team === TEAM.RADIANT ? '#4c6a33' : '#7b3524');
+      mg.addColorStop(1, u.team === TEAM.RADIANT ? '#2c3f1e' : '#48200f');
+      ctx.beginPath();
+      ctx.moveTo(x, y - r*1.05);
+      ctx.lineTo(x + r*0.95, y - r*0.05);
+      ctx.lineTo(x + r*0.72, y + r*0.9);
+      ctx.lineTo(x - r*0.72, y + r*0.9);
+      ctx.lineTo(x - r*0.95, y - r*0.05);
+      ctx.closePath();
+      ctx.fillStyle = mg; ctx.fill();
+      ctx.lineWidth = 1.7; ctx.strokeStyle = 'rgba(14,20,10,0.92)'; ctx.stroke();
+      // щит спереди
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(ag3)*r*0.62, y + Math.sin(ag3)*r*0.55, r*0.34, r*0.42, ag3, 0, TAU);
+      ctx.fillStyle = 'rgba(60,50,35,0.9)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(18,14,8,0.9)'; ctx.lineWidth = 1.2; ctx.stroke();
+      // глаза
+      ctx.fillStyle = 'rgba(10,16,8,0.95)';
+      ctx.beginPath(); ctx.arc(x + u.refDir.x*r*0.3, y + u.refDir.y*r*0.26, r*0.15, 0, TAU); ctx.fill();
     }
-    // удар-вспышка
+
+    // вспышка урона
     if(u.hitFlash > 0){
-      ctx.beginPath(); ctx.arc(x, y, r*1.2, 0, TAU);
-      ctx.fillStyle = 'rgba(255,240,180,' + (u.hitFlash*0.55) + ')'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, r*1.25, 0, TAU);
+      ctx.fillStyle = 'rgba(255,240,180,' + (u.hitFlash*0.5) + ')'; ctx.fill();
     }
-    // блинк-всполох
+    // блинк-всполох героя
     if(u.blinkFx > 0){
-      ctx.beginPath(); ctx.arc(x, y, r*(1.1 + (1-u.blinkFx)*2.2), 0, TAU);
-      ctx.strokeStyle = 'rgba(110,205,255,' + (u.blinkFx*0.7) + ')'; ctx.lineWidth = 2;
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r*(1.1 + (1-u.blinkFx)*2.4), 0, TAU);
+      ctx.strokeStyle = 'rgba(110,205,255,' + (u.blinkFx*0.7) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // «стоит на месте» — пунктир (герой обманно замер)
+    if(u.isHero && u.speed < u.baseSpeed*0.25 && Game.countdownT <= 0){
+      ctx.beginPath(); ctx.arc(x, y, r*1.6, 0, TAU);
+      ctx.strokeStyle = 'rgba(230,220,120,0.30)'; ctx.lineWidth = 1.2;
+      ctx.setLineDash([3,4]); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.restore();
 
-    // подпись
-    if(labels && spawn > 0.6 && Game.countdownT <= 0){
+    // ── HP-полоска (как в доте: у врагов видна всегда) ──
+    if(hpBars && spawn > 0.5 && (u.team === TEAM.DIRE || u.hp < u.hpMax)){
+      var hpw = r*2.3, hph = 3.4;
+      var hpx = u.pos.x - hpw/2, hpy = u.pos.y - r*1.95 - hph;
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      ctx.fillRect(hpx-1, hpy-1, hpw+2, hph+2);
+      var frac = clamp(u.hp / u.hpMax, 0, 1);
+      ctx.fillStyle = u.team === TEAM.DIRE ? (frac > 0.5 ? '#d1503a' : '#e2703a') : '#7fc35a';
+      ctx.fillRect(hpx, hpy, hpw*frac, hph);
+    }
+
+    // подпись героя
+    if(u.isHero && labels && spawn > 0.6 && Game.countdownT <= 0){
       ctx.font = '600 ' + Math.max(9, Math.round(9.5*S + 3)) + 'px system-ui, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.strokeText(u.isHero ? 'ГЕРОЙ' : 'КРИП', x, y + r*1.25);
-      ctx.fillStyle = u.isHero ? 'rgba(226,178,255,0.85)' : 'rgba(178,222,140,0.8)';
-      ctx.fillText(u.isHero ? 'ГЕРОЙ' : 'КРИП', x, y + r*1.25);
+      ctx.strokeText('ГЕРОЙ', u.pos.x, u.pos.y + r*1.25);
+      ctx.fillStyle = 'rgba(255,170,150,0.9)';
+      ctx.fillText('ГЕРОЙ', u.pos.x, u.pos.y + r*1.25);
     }
   }
 }
 
-// ── Маркеры кастов («кипят» до удара) ──
+// ── Вышка: три яруса, кристалл-маяк, команда на флаге ──
+function drawTower(u, time){
+  var x = u.pos.x, y = u.pos.y, r = u.r;
+  var col = u.team === TEAM.RADIANT ? { a:'#8fd06a', b:'#3f5c2c', glow:'150,230,120' }
+                                    : { a:'#e08a70', b:'#5c2418', glow:'240,130,100' };
+  var spawn = easeOut(clamp(u.spawnT,0,1));
+  ctx.save();
+  ctx.globalAlpha = spawn;
+  // тень
+  ctx.beginPath();
+  ctx.ellipse(x + r*0.35, y + r*0.55, r*1.6, r*0.7, 0, 0, TAU);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fill();
+  // три яруса
+  for(var i=0;i<3;i++){
+    var w = r * (1.25 - i*0.28), hh = r*0.62;
+    var by = y - i*r*0.62;
+    ctx.beginPath();
+    ctx.moveTo(x - w, by);
+    ctx.lineTo(x - w*0.82, by - hh);
+    ctx.lineTo(x + w*0.82, by - hh);
+    ctx.lineTo(x + w, by);
+    ctx.closePath();
+    var tg = ctx.createLinearGradient(x - w, 0, x + w, 0);
+    tg.addColorStop(0, '#5b564c'); tg.addColorStop(0.45, '#7d776a'); tg.addColorStop(1, '#3c382f');
+    ctx.fillStyle = tg; ctx.fill();
+    ctx.strokeStyle = 'rgba(18,16,12,0.9)'; ctx.lineWidth = 1.4; ctx.stroke();
+    // зубцы
+    ctx.fillStyle = 'rgba(30,28,22,0.85)';
+    for(var k=-1;k<=1;k++){
+      ctx.fillRect(x + k*w*0.6 - w*0.12, by - hh - r*0.12, w*0.24, r*0.14);
+    }
+  }
+  // кристалл-маяк
+  var pulse = 0.6 + 0.4*Math.sin(time*3 + u.id);
+  var attacking = (u.atkCd > u.atkInt - 0.25);
+  var glowA = attacking ? 1 : pulse*0.6;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  var cg = ctx.createRadialGradient(x, y - r*2.1, 0, x, y - r*2.1, r*2.2);
+  cg.addColorStop(0, 'rgba(' + col.glow + ',' + (0.55*glowA) + ')');
+  cg.addColorStop(1, 'rgba(' + col.glow + ',0)');
+  ctx.beginPath(); ctx.arc(x, y - r*2.1, r*2.2, 0, TAU); ctx.fillStyle = cg; ctx.fill();
+  ctx.restore();
+  ctx.beginPath();
+  ctx.moveTo(x, y - r*2.7);
+  ctx.lineTo(x + r*0.42, y - r*2.1);
+  ctx.lineTo(x, y - r*1.55);
+  ctx.lineTo(x - r*0.42, y - r*2.1);
+  ctx.closePath();
+  ctx.fillStyle = col.a; ctx.fill();
+  ctx.strokeStyle = 'rgba(20,18,14,0.9)'; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.restore();
+
+  // HP вышки
+  if(CONFIG.guide.hpBars){
+    var hpw = r*2.6, hph = 4;
+    var hpx = x - hpw/2, hpy = y - r*3.15 - hph;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(hpx-1, hpy-1, hpw+2, hph+2);
+    ctx.fillStyle = u.team === TEAM.DIRE ? '#d1503a' : '#7fc35a';
+    ctx.fillRect(hpx, hpy, hpw * clamp(u.hp/u.hpMax,0,1), hph);
+    ctx.font = '600 ' + Math.max(8, Math.round(8*S + 3)) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(230,225,210,0.75)';
+    ctx.fillText('ВЫШКА ' + (u.team === TEAM.DIRE ? 'ТЬМЫ' : 'СВЕТА'), x, hpy - 2);
+  }
+}
+
+// ── Снаряды и замахи ──
+function drawProjectiles(){
+  var ps = FX.projectiles();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(var i=0;i<ps.length;i++){
+    var p = ps[i];
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size*2.1, 0, TAU);
+    ctx.fillStyle = 'rgba(' + p.color + ',0.22)'; ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, TAU);
+    ctx.fillStyle = 'rgba(' + p.color + ',0.95)'; ctx.fill();
+    // хвостик
+    if(p.target){
+      var a = Math.atan2(p.target.pos.y - p.y, p.target.pos.x - p.x);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - Math.cos(a)*p.size*3.4, p.y - Math.sin(a)*p.size*3.4);
+      ctx.strokeStyle = 'rgba(' + p.color + ',0.5)'; ctx.lineWidth = p.size*0.9; ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  var ss = FX.slashes();
+  for(var j=0;j<ss.length;j++){
+    var sl = ss[j], k = clamp(1 - sl.t/sl.life, 0, 1);
+    ctx.save();
+    ctx.translate(sl.x, sl.y);
+    ctx.rotate(sl.a);
+    ctx.beginPath();
+    ctx.arc(0, 0, 11*S + 5*S*(1-k), -0.9, 0.9);
+    ctx.strokeStyle = sl.color;
+    ctx.globalAlpha = k * 0.85;
+    ctx.lineWidth = 2.4*S * k + 0.6;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Крупные надписи аннонсера (Killing Spree, Rampage и т.п.) ──
+function drawBanners(){
+  var bs = Game.banners;
+  for(var i=0;i<bs.length;i++){
+    var b = bs[i], k = clamp(b.t / b.life, 0, 1);
+    var a = k < 0.12 ? k/0.12 : (k > 0.72 ? (1-k)/0.28 : 1);
+    var pop = k < 0.12 ? lerp(0.82, 1, k/0.12) : 1;
+    var y = Field.y + Field.h*0.30 + i*34*S;
+    ctx.save();
+    ctx.globalAlpha = clamp(a, 0, 1);
+    ctx.translate(W/2, y);
+    ctx.scale(pop, pop);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '800 ' + Math.max(20, Math.round(26*S + 8)) + 'px system-ui, sans-serif';
+    var g = ctx.createLinearGradient(0, -20, 0, 20);
+    g.addColorStop(0, '#fff3cf'); g.addColorStop(0.5, b.color); g.addColorStop(1, '#8c4a10');
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeText(b.text, 0, 0);
+    ctx.fillStyle = g; ctx.fillText(b.text, 0, 0);
+    if(b.sub){
+      ctx.font = '700 ' + Math.max(10, Math.round(11*S + 4)) + 'px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,235,200,0.75)';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(b.sub, 0, 22*S + 6);
+      ctx.fillText(b.sub, 0, 22*S + 6);
+    }
+    ctx.restore();
+  }
+}
+
+// ── Маркеры кастов: дотерский индикатор зоны + «кипящий» запал ──
 function drawCasts(time){
   var cs = Game.casts;
   for(var i=0;i<cs.length;i++){
     var c = cs[i], R = c.radius;
     var total = Math.max(0.05, Game.delay);
-    var p = clamp(c.t / total, 0, 1);              // 0 → 1 за время до удара
+    var p = clamp(c.t / total, 0, 1);                 // 0 → 1 за время до удара
     var wob = Math.sin(time*26) * (1 - p*0.5);
 
-    // круг зоны поражения
+    // ── зона поражения: заливка + чёткий ободок (как AoE-индикатор в доте) ──
     ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, TAU);
-    ctx.fillStyle = 'rgba(255,140,30,' + (0.05 + 0.06*p) + ')';
-    ctx.fill();
-    ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,190,90,' + (0.30 + 0.25*p) + ')'; ctx.stroke();
+    var zg = ctx.createRadialGradient(c.x, c.y, R*0.15, c.x, c.y, R);
+    zg.addColorStop(0, 'rgba(255,160,40,' + (0.05 + 0.05*p) + ')');
+    zg.addColorStop(0.75, 'rgba(255,130,30,' + (0.09 + 0.07*p) + ')');
+    zg.addColorStop(1, 'rgba(255,190,80,' + (0.16 + 0.12*p) + ')');
+    ctx.fillStyle = zg; ctx.fill();
+    // ободок зоны
+    ctx.lineWidth = 2.0; ctx.strokeStyle = 'rgba(255,214,130,' + (0.55 + 0.35*p) + ')';
+    ctx.stroke();
+    // внутренний тонкий ободок
+    ctx.beginPath(); ctx.arc(c.x, c.y, R*0.985, 0, TAU);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,225,' + (0.18 + 0.2*p) + ')'; ctx.stroke();
+    // засечки по диагоналям — фирменная черта дотерского индикатора
+    for(var d=0; d<4; d++){
+      var da = Math.PI/4 + d*Math.PI/2;
+      var x1 = c.x + Math.cos(da)*R*0.86, y1 = c.y + Math.sin(da)*R*0.86;
+      var x2 = c.x + Math.cos(da)*R*1.12, y2 = c.y + Math.sin(da)*R*1.12;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(255,214,130,' + (0.5 + 0.4*p) + ')'; ctx.stroke();
+    }
 
-    // «кипящая» волнистая кромка — визуальный таймер
+    // ── запал: сжимающееся кольцо показывает, сколько осталось ──
+    var rr = R * (1 - p * 0.92);
+    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(1, rr), 0, TAU);
+    ctx.lineWidth = 2.6; ctx.strokeStyle = 'rgba(255,' + Math.round(150 + 80*p) + ',60,' + (0.5 + 0.5*Math.sin(time*16)) + ')';
+    ctx.stroke();
+
+    // ── «кипение»: волнистая кромка внутри зоны ──
     ctx.beginPath();
     var pts = CONFIG.strike.fusePoints;
     for(var k=0;k<=pts;k++){
-      var a = k/pts * TAU;
-      var rr = R * (1 + CONFIG.strike.fuseWobble * wob * Math.sin(a*5 + time*11));
-      var px = c.x + Math.cos(a)*rr, py = c.y + Math.sin(a)*rr*0.98;
+      var a2 = k/pts * TAU;
+      var rw = R * (1 - 0.06 - CONFIG.strike.fuseWobble*wob*Math.sin(a2*5 + time*11) * 0.5);
+      var px = c.x + Math.cos(a2)*rw, py = c.y + Math.sin(a2)*rw;
       if(k === 0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
     ctx.closePath();
-    ctx.strokeStyle = 'rgba(255,' + Math.round(160 + 80*p) + ',60,' + (0.75 + 0.25*Math.sin(time*18)) + ')';
-    ctx.lineWidth = 2.2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,180,70,' + (0.35 + 0.3*Math.sin(time*18)) + ')';
+    ctx.lineWidth = 1.5; ctx.stroke();
 
-    // заливка по мере «нагрева»
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, R * 0.55, -Math.PI/2, -Math.PI/2 + TAU*p);
-    ctx.lineTo(c.x, c.y);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,' + Math.round(120 + 110*p) + ',40,0.13)';
-    ctx.fill();
+    // ── центр: маленькое солнце с лучами (метка прицела) ──
+    var sunR = 5*S + 2*p;
+    ctx.save();
+    ctx.translate(c.x, c.y); ctx.rotate(time*0.9);
+    ctx.beginPath(); ctx.arc(0, 0, sunR, 0, TAU);
+    ctx.fillStyle = 'rgba(255,245,205,' + (0.7 + 0.3*Math.sin(time*20)) + ')'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,205,110,0.85)'; ctx.lineWidth = 1.6;
+    for(var r2=0; r2<8; r2++){
+      var ra = r2 * Math.PI/4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ra)*(sunR+2), Math.sin(ra)*(sunR+2));
+      ctx.lineTo(Math.cos(ra)*(sunR+6.5), Math.sin(ra)*(sunR+6.5));
+      ctx.stroke();
+    }
+    ctx.restore();
 
-    // точки-искры из центра
-    ctx.beginPath(); ctx.arc(c.x, c.y, 4*S + 2*p, 0, TAU);
-    ctx.fillStyle = 'rgba(255,240,190,' + (0.55 + 0.45*Math.sin(time*22)) + ')';
-    ctx.fill();
+    // ── подписи: радиус в юнитах доты, уровень ульта и остаток запала ──
+    var lvl = c.ultLevel + (c.aghanim ? ' +Агани́м' : '');
+    var rU = Math.round(pxToUnits(R));
+    ctx.font = '700 ' + Math.max(9, Math.round(9.5*S + 3)) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    var cap = 'SUN STRIKE ' + lvl + ' · R ' + rU + ' ед.';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.strokeText(cap, c.x, c.y - R - 24*S);
+    ctx.fillStyle = 'rgba(255,224,160,0.95)';
+    ctx.fillText(cap, c.x, c.y - R - 24*S);
 
-    // обратный отсчёт в миллисекундах — помогает свыкнуться с таймингом
     if(CONFIG.guide.showMs){
       var leftMs = Math.max(0, Math.round((c.at - Game.time)*1000));
-      ctx.font = '700 ' + Math.round(10*S + 3) + 'px system-ui, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillStyle = 'rgba(255,225,170,0.9)';
-      ctx.fillText(leftMs + ' мс', c.x, c.y - R - 22*S);
+      ctx.font = '800 ' + Math.max(10, Math.round(11*S + 3)) + 'px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,240,200,' + (0.75 + 0.25*Math.sin(time*12)) + ')';
+      ctx.fillText(leftMs + ' мс', c.x, c.y - R - 8*S);
     }
 
-    // шкала запала
-    var bw = R*1.4, bh = 4;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(c.x - bw/2 - 1, c.y - R - 16*S - 1, bw + 2, bh + 2);
-    ctx.fillStyle = p > 0.78 ? '#ff7a1a' : '#ffc247';
-    ctx.fillRect(c.x - bw/2, c.y - R - 16*S, bw*p, bh);
-
-    // искры-огоньки
-    if(Math.random() < 0.34) FX.fuse(c.x, c.y, R * rand(0.4, 1.0));
+    // искры-угольки, поднимающиеся из зоны
+    if(Math.random() < 0.4) FX.fuse(c.x, c.y, R * rand(0.4, 1.0));
   }
 }
 
@@ -2027,27 +3122,354 @@ function drawCountdown(){
   ctx.restore();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  9b. Дотерская панель героя: портрет Инвокера, иконки абилок, HP и мана
+// ══════════════════════════════════════════════════════════════════════════════
+var hudAnim = { cast:0, iconPulse:0 };
+
+// Портрет Инвокера: рисуем процедурно (без ассетов) — капюшон, золото, три сферы
+function drawInvokerPortrait(cx, cy, R, time){
+  ctx.save();
+  // рамка-круг
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.closePath();
+  ctx.save(); ctx.clip();
+  // фон
+  var bg = ctx.createRadialGradient(cx, cy - R*0.3, R*0.1, cx, cy, R*1.2);
+  bg.addColorStop(0, '#3a1d14');
+  bg.addColorStop(0.6, '#241109');
+  bg.addColorStop(1, '#120806');
+  ctx.fillStyle = bg; ctx.fillRect(cx-R, cy-R, R*2, R*2);
+
+  // мантия (плечи)
+  ctx.beginPath();
+  ctx.moveTo(cx - R*1.15, cy + R*1.05);
+  ctx.quadraticCurveTo(cx - R*0.85, cy + R*0.05, cx - R*0.42, cy - R*0.05);
+  ctx.lineTo(cx + R*0.42, cy - R*0.05);
+  ctx.quadraticCurveTo(cx + R*0.85, cy + R*0.05, cx + R*1.15, cy + R*1.05);
+  ctx.closePath();
+  var rg = ctx.createLinearGradient(cx - R, cy, cx + R, cy + R);
+  rg.addColorStop(0, '#7d2b1c'); rg.addColorStop(0.45, '#5a1c12'); rg.addColorStop(1, '#2c0d07');
+  ctx.fillStyle = rg; ctx.fill();
+  // золотая отделка мантии
+  ctx.beginPath();
+  ctx.moveTo(cx - R*0.42, cy - R*0.05);
+  ctx.lineTo(cx + R*0.42, cy - R*0.05);
+  ctx.strokeStyle = 'rgba(226,178,72,0.9)'; ctx.lineWidth = Math.max(1.4, R*0.05); ctx.stroke();
+  // высокий воротник-стойка
+  ctx.beginPath();
+  ctx.moveTo(cx - R*0.46, cy);
+  ctx.lineTo(cx - R*0.62, cy - R*0.62);
+  ctx.lineTo(cx - R*0.30, cy - R*0.30);
+  ctx.closePath();
+  ctx.fillStyle = '#8b3a22'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx + R*0.46, cy);
+  ctx.lineTo(cx + R*0.62, cy - R*0.62);
+  ctx.lineTo(cx + R*0.30, cy - R*0.30);
+  ctx.closePath();
+  ctx.fillStyle = '#6d2a18'; ctx.fill();
+
+  // шея и голова
+  ctx.beginPath();
+  ctx.moveTo(cx - R*0.20, cy - R*0.10);
+  ctx.lineTo(cx - R*0.18, cy - R*0.34);
+  ctx.lineTo(cx + R*0.18, cy - R*0.34);
+  ctx.lineTo(cx + R*0.20, cy - R*0.10);
+  ctx.closePath();
+  ctx.fillStyle = '#c99a74'; ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - R*0.62, R*0.30, R*0.36, 0, 0, TAU);
+  var fg = ctx.createLinearGradient(cx - R*0.3, cy - R, cx + R*0.3, cy - R*0.3);
+  fg.addColorStop(0, '#f0d3b4'); fg.addColorStop(1, '#c99a74');
+  ctx.fillStyle = fg; ctx.fill();
+  // седые волосы и борода
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - R*0.86, R*0.32, R*0.20, 0, Math.PI, TAU);
+  ctx.fillStyle = '#e8e4dc'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - R*0.22, cy - R*0.44);
+  ctx.quadraticCurveTo(cx, cy - R*0.16, cx + R*0.22, cy - R*0.44);
+  ctx.quadraticCurveTo(cx, cy - R*0.30, cx - R*0.22, cy - R*0.44);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(232,228,220,0.95)'; ctx.fill();
+  // глаза: светящиеся (Exort-огонь)
+  var blink = (Math.sin(time*0.7) > 0.985) ? 0.15 : 1;
+  ctx.fillStyle = 'rgba(255,196,90,' + (0.9*blink) + ')';
+  ctx.beginPath(); ctx.ellipse(cx - R*0.12, cy - R*0.66, R*0.05, R*0.033*blink, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + R*0.12, cy - R*0.66, R*0.05, R*0.033*blink, 0, 0, TAU); ctx.fill();
+  // золотой венец
+  ctx.beginPath();
+  ctx.moveTo(cx - R*0.34, cy - R*0.92);
+  ctx.lineTo(cx - R*0.24, cy - R*1.22);
+  ctx.lineTo(cx - R*0.10, cy - R*0.98);
+  ctx.lineTo(cx, cy - R*1.34);
+  ctx.lineTo(cx + R*0.10, cy - R*0.98);
+  ctx.lineTo(cx + R*0.24, cy - R*1.22);
+  ctx.lineTo(cx + R*0.34, cy - R*0.92);
+  ctx.closePath();
+  var cg = ctx.createLinearGradient(cx, cy - R*1.35, cx, cy - R*0.9);
+  cg.addColorStop(0, '#ffe9a8'); cg.addColorStop(1, '#b57d1e');
+  ctx.fillStyle = cg; ctx.fill();
+  ctx.strokeStyle = 'rgba(60,38,6,0.9)'; ctx.lineWidth = Math.max(1, R*0.035); ctx.stroke();
+  // рубин во венце
+  ctx.beginPath(); ctx.arc(cx, cy - R*1.08, R*0.07, 0, TAU);
+  ctx.fillStyle = '#e0453a'; ctx.fill();
+
+  // три сферы (Quas/Wex/Exort) — парят вокруг головы
+  var orbs = [
+    { a: time*1.1,               col: '#4aa8ff', r: R*0.13, d: R*0.98 },
+    { a: time*1.1 + 2.09,        col: '#b06bff', r: R*0.12, d: R*0.98 },
+    { a: time*1.1 + 4.19,        col: '#ff9a2e', r: R*0.14, d: R*0.98 }
+  ];
+  for(var i=0;i<3;i++){
+    var o = orbs[i];
+    var ox = cx + Math.cos(o.a - Math.PI/2)*o.d, oy = cy - R*0.72 + Math.sin(o.a - Math.PI/2)*o.d*0.42;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var og = ctx.createRadialGradient(ox, oy, 0, ox, oy, o.r*2.6);
+    og.addColorStop(0, o.col); og.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.arc(ox, oy, o.r*2.6, 0, TAU); ctx.fillStyle = og; ctx.fill();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(ox, oy, o.r, 0, TAU);
+    ctx.fillStyle = o.col; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  // вспышка при касте
+  if(hudAnim.cast > 0){
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = hudAnim.cast * 0.5;
+    var cgf = ctx.createRadialGradient(cx, cy - R*0.5, 0, cx, cy - R*0.5, R*1.3);
+    cgf.addColorStop(0, 'rgba(255,220,150,1)');
+    cgf.addColorStop(1, 'rgba(255,120,20,0)');
+    ctx.beginPath(); ctx.arc(cx, cy - R*0.5, R*1.3, 0, TAU); ctx.fillStyle = cgf; ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();   // конец клипа
+
+  // кольцо портрета + уровень
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU);
+  ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(226,178,72,0.85)'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R + 2.5, 0, TAU);
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,225,170,0.25)'; ctx.stroke();
+  var lvl = Save.data.level;
+  ctx.beginPath(); ctx.arc(cx, cy + R*0.86, R*0.30, 0, TAU);
+  ctx.fillStyle = '#1a120a'; ctx.fill();
+  ctx.strokeStyle = 'rgba(226,178,72,0.9)'; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.font = '800 ' + Math.round(R*0.34) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffc247';
+  ctx.fillText(String(lvl), cx, cy + R*0.88);
+  ctx.restore();
+}
+
+// Иконка сферы (Quas/Wex/Exort)
+function drawOrbIcon(x, y, s, col, glyph, hotkey){
+  var g = ctx.createRadialGradient(x - s*0.2, y - s*0.25, s*0.06, x, y, s*0.5);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.25, col); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.beginPath(); ctx.arc(x, y, s*0.42, 0, TAU);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.font = '800 ' + Math.round(s*0.34) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillText(glyph, x, y + 0.5);
+  drawHotkey(x, y, s, hotkey);
+}
+function drawHotkey(x, y, s, key){
+  if(!key) return;
+  ctx.font = '700 ' + Math.max(8, Math.round(s*0.26)) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(255,225,170,0.75)';
+  ctx.fillText(key, x, y + s*0.52);
+}
+// Иконка Sun Strike: солнце, уровень ульта пипсами, свип кулдауна
+function drawSunIcon(x, y, s, lvl, aghanim, cdFrac){
+  var r = s*0.44;
+  // фон иконки
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
+  var bg = ctx.createRadialGradient(x, y, r*0.1, x, y, r);
+  bg.addColorStop(0, '#fff3c4'); bg.addColorStop(0.45, '#ffb347'); bg.addColorStop(1, '#7a3407');
+  ctx.fillStyle = bg; ctx.fill();
+  // лучи
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(hudAnim.iconPulse * 0.6);
+  ctx.strokeStyle = 'rgba(255,240,190,0.95)'; ctx.lineWidth = Math.max(1, s*0.05);
+  for(var i=0;i<8;i++){
+    var a = i*Math.PI/4;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*r*0.62, Math.sin(a)*r*0.62);
+    ctx.lineTo(Math.cos(a)*r*0.92, Math.sin(a)*r*0.92);
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, r*0.36, 0, TAU);
+  ctx.fillStyle = 'rgba(255,255,240,0.95)'; ctx.fill();
+  ctx.restore();
+  // свип кулдауна
+  if(cdFrac > 0.001){
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, r, -Math.PI/2, -Math.PI/2 + TAU*cdFrac);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  }
+  // уровень ульта — пипсы снизу
+  for(var k=0;k<4;k++){
+    ctx.beginPath();
+    var px = x - r*0.52 + k*r*0.35, py = y + r*0.62;
+    ctx.arc(px, py, r*0.10, 0, TAU);
+    ctx.fillStyle = k < lvl ? '#ffd15c' : 'rgba(255,255,255,0.18)';
+    ctx.fill();
+  }
+  // Аганим — корона сверху
+  if(aghanim){
+    ctx.beginPath();
+    ctx.moveTo(x - r*0.5, y - r*0.72);
+    ctx.lineTo(x - r*0.25, y - r*1.02);
+    ctx.lineTo(x, y - r*0.78);
+    ctx.lineTo(x + r*0.25, y - r*1.02);
+    ctx.lineTo(x + r*0.5, y - r*0.72);
+    ctx.closePath();
+    ctx.fillStyle = '#ffd15c'; ctx.fill();
+    ctx.strokeStyle = 'rgba(60,38,6,0.9)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  drawHotkey(x, y, s, 'R');
+}
+
+function drawHudPanel(time){
+  var h = HUD_H, y0 = H - h;
+  var pad = 8;
+  // фон панели
+  var bg = ctx.createLinearGradient(0, y0, 0, H);
+  bg.addColorStop(0, 'rgba(10,14,11,0.86)');
+  bg.addColorStop(1, 'rgba(6,9,7,0.96)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, y0, W, h);
+  // золотая линия сверху и лёгкая внутренняя подсветка
+  ctx.fillStyle = 'rgba(226,178,72,0.55)';
+  ctx.fillRect(0, y0, W, 1.5);
+  ctx.fillStyle = 'rgba(226,178,72,0.08)';
+  ctx.fillRect(0, y0 + 1.5, W, 1);
+
+  hudAnim.iconPulse += 0.02;
+
+  var pr = h * 0.36;                       // радиус портрета
+  var cx = pad + pr + 6, cy = y0 + h*0.5 - 4;
+  drawInvokerPortrait(cx, cy, pr, time);
+
+  // ── иконки абилок ──
+  var s = h * 0.42;
+  var ix = cx + pr + 14;
+  var iy = y0 + h*0.46;
+  drawOrbIcon(ix, iy, s, '#4aa8ff', 'Q', 'Q');
+  drawOrbIcon(ix + s*1.15, iy, s, '#b06bff', 'W', 'W');
+  drawOrbIcon(ix + s*2.30, iy, s, '#ff9a2e', 'E', 'E');
+  // Invoke
+  ctx.beginPath(); ctx.arc(ix + s*3.45, iy, s*0.42, 0, TAU);
+  var ig = ctx.createRadialGradient(ix + s*3.45, iy, s*0.05, ix + s*3.45, iy, s*0.42);
+  ig.addColorStop(0, '#e8e4dc'); ig.addColorStop(0.5, '#8d7ad6'); ig.addColorStop(1, '#2b1d4d');
+  ctx.fillStyle = ig; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.save();
+  ctx.translate(ix + s*3.45, iy); ctx.rotate(time*1.6);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = Math.max(1, s*0.06);
+  ctx.beginPath();
+  for(var sp=0; sp<3; sp++){
+    var aa = sp*TAU/3;
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(Math.cos(aa)*s*0.22, Math.sin(aa)*s*0.22, Math.cos(aa+1.1)*s*0.30, Math.sin(aa+1.1)*s*0.30);
+  }
+  ctx.stroke();
+  ctx.restore();
+  drawHotkey(ix + s*3.45, iy, s, 'D');
+  // Sun Strike
+  var cdFrac = clamp(1 - (Game.time - Game.lastCast) / CONFIG.strike.castCooldown, 0, 1);
+  drawSunIcon(ix + s*4.60, iy, s, Game.ultLevel || 1, Game.aghanim, cdFrac);
+
+  // ── полосы HP и маны ──
+  var bx = ix + s*5.75, bw = Math.min(W - bx - pad - 4, 210), bh = Math.max(7, h*0.13);
+  var by = y0 + h*0.30;
+  // HP
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, by-1, bw+2, bh+2);
+  var hpg = ctx.createLinearGradient(bx, by, bx, by+bh);
+  hpg.addColorStop(0, '#9ee06a'); hpg.addColorStop(1, '#4e8a33');
+  ctx.fillStyle = hpg; ctx.fillRect(bx, by, bw, bh);
+  ctx.font = '700 ' + Math.max(9, Math.round(bh*0.95)) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(6,12,6,0.9)';
+  ctx.fillText('HP ' + CONFIG.dota.heroHp, bx + 4, by + bh/2 + 0.5);
+  // мана
+  var my = by + bh + 3;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, my-1, bw+2, bh+2);
+  var mg = ctx.createLinearGradient(bx, my, bx, my+bh);
+  mg.addColorStop(0, '#7fc8ff'); mg.addColorStop(1, '#2a5f9e');
+  var manaFrac = clamp((Game.mana === undefined ? CONFIG.strike.manaMax : Game.mana) / CONFIG.strike.manaMax, 0, 1);
+  ctx.fillStyle = mg; ctx.fillRect(bx, my, bw*manaFrac, bh);
+  ctx.fillStyle = 'rgba(6,10,18,0.9)';
+  ctx.fillText('МАНА ' + Math.round(Game.mana === undefined ? CONFIG.strike.manaMax : Game.mana) + ' / ' + CONFIG.strike.manaMax, bx + 4, my + bh/2 + 0.5);
+
+  // ── строка с параметрами ульты (главное для тренажёра) ──
+  var infoY = my + bh + Math.max(9, h*0.12);
+  ctx.font = '700 ' + Math.max(9, Math.round(h*0.115)) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,214,140,0.92)';
+  var rUnits = Math.round(pxToUnits(Game.effectiveRadius()));
+  var narrow = W < 820;                       // на телефоне текст короче, чтобы не наезжать на полосы
+  ctx.fillText(narrow
+    ? ('УЛТ ' + (Game.ultLevel||1) + '/4 · R ' + rUnits + ' · ' + Game.strikeDamage() + ' урона · ' + fmt2(Game.delay) + ' с')
+    : ('УЛЬТА ' + (Game.ultLevel||1) + '/4' + (Game.aghanim ? ' +АГАНИ́М' : '') +
+       ' · РАДИУС ' + rUnits + ' ед. · УРОН ' + Game.strikeDamage() +
+       (Save.data.set.dotaHp ? '' : ' (добивает)') +
+       ' · ЗАДЕРЖКА ' + fmt2(Game.delay) + ' с'), bx, infoY);
+
+  // ── боевой счёт линий (только если хватает места по ширине) ──
+  if(Game.battle && W >= 820){
+    ctx.font = '700 ' + Math.max(9, Math.round(h*0.11)) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(150,220,130,0.95)';
+    ctx.fillText('СВЕТ: ' + Game.battle.radiantKills + ' крипов · ' + Game.battle.towersDire + ' вышек',
+                 W - pad, y0 + h*0.32);
+    ctx.fillStyle = 'rgba(235,130,110,0.95)';
+    ctx.fillText('ТЬМА: ' + Game.battle.direKills + ' крипов · ' + Game.battle.towersRadiant + ' вышек',
+                 W - pad, y0 + h*0.32 + Math.max(12, h*0.16));
+  }
+}
+
 // ── Главный кадр ──
 function draw(time){
   var sh = FX.shakeOff;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0,0,W,H);
   // сдвиг тряски ТОЛЬКО целыми пикселями: дробный сдвиг заставляет браузер
-  // пересэмплировать всю землю и фоны каждый кадр (это и есть главный фриз)
+  // пересэмплировать всю землю и фоны каждый кадр (это и был главный фриз)
   ctx.translate(Math.round(sh.x), Math.round(sh.y));
 
-  ctx.drawImage(ground, 0, 0, W, H);      // земля (кэш)
+  // порядок отрисовки: земля → пятна и трупы → маркеры → юниты (по глубине) →
+  // снаряды → декор поверх → свет и частицы → разбор → интерфейс
+  ctx.drawImage(ground, 0, 0, W, H);
   drawFog();
+  drawDecals();
+  drawCorpses();
   drawCasts(time);
+
+  // сортировка по Y — даёт ощущение глубины вместе с объёмным декором
+  var list = Game.units.slice();
+  list.sort(function(a,b){ return (a.pos.y - b.pos.y) || (a.id - b.id); });
+  Game._drawOrder = list;
   drawUnits(time);
+  drawProjectiles();
+  drawOverlay();
+
   drawBooms(time);
   drawParticles();
   drawAimGuide();
   drawReviews(time);
   drawCursor(time);
+  drawBanners();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // прицел-палец для тача тоже полезен (рисуем поверх тряски)
+  // прицел-палец для тача
   if(Game.pointer.inside && Game.pointer.touch){
     var p = Game.pointer;
     ctx.beginPath(); ctx.arc(p.x, p.y, Game.effectiveRadius()*0.5, 0, TAU);
@@ -2061,8 +3483,8 @@ function draw(time){
     ctx.fillRect(0,0,W,H);
   }
   drawCountdown();
+  if(Game.state !== 'menu') drawHudPanel(time);
 
-  // пауза — затемняем
   if(Game.state === 'paused'){
     ctx.fillStyle = 'rgba(4,6,5,0.45)';
     ctx.fillRect(0,0,W,H);
@@ -2103,14 +3525,17 @@ var UI = (function(){
     tEl.classList.toggle('low', left <= 10);
     $('hCasts').textContent = st.casts;
     $('hHits').textContent = st.hits;
-    $('hAcc').textContent = st.casts ? fmtPct(st.acc) : '—';
+    $('hAcc').textContent = st.casts ? fmtPct(st.acc) + '/' + fmtPct(st.heroAcc) : '—';
     var sEl = $('hStreak');
     sEl.textContent = st.streak;
     sEl.classList.toggle('hot', st.streak >= CONFIG.score.multStep);
     $('hMiss').textContent = Game.missN ? Math.round(st.avgMiss) + ' px' : '—';
-    $('hKills').textContent = Game.kills;
+    $('hKills').textContent = st.kills;
     $('hScore').textContent = Game.score;
+    if($('hDmg')) $('hDmg').textContent = Math.round(st.damage);
   }
+  // вспышка портрета и иконки при касте
+  function castFx(){ hudAnim.cast = 1; }
   function flashStreak(n){
     var sEl = $('hStreak');
     sEl.classList.toggle('hot', n >= CONFIG.score.multStep);
@@ -2138,11 +3563,38 @@ var UI = (function(){
     var kids = $('diffBox').children;
     for(var i=0;i<kids.length;i++) kids[i].classList.toggle('sel', (i+1) === id);
     var d = DIFFICULTIES[id];
-    $('diffHint').textContent = 'Целей на карте: ' + d.count +
-      ' · скорость ' + Math.round(d.speed) + ' px/с' +
-      ' · радиус удара ' + Math.round(CONFIG.strike.radius * d.radiusMul) + ' px' +
-      (d.blink ? ' · БЛИНКИ ВКЛ' : '') + (d.stutter ? ' · STUTTER-STEP' : '') +
+    var lvl = Save.data.set.ultLevel;
+    $('diffHint').innerHTML = 'Героев-целей: <b>' + d.heroes + '</b>' +
+      ' · скорость героев ×' + d.heroSpeedMul +
+      ' · волна крипов ×' + d.waveMul +
+      ' · Sun Strike ' + lvl + ' ур. = радиус ' + Math.round(CONFIG.dota.radiusUnits[lvl-1]) + ' ед. / ' +
+      Math.round(unitsToPx(CONFIG.dota.radiusUnits[lvl-1])) + ' px' +
+      ' · урон ' + CONFIG.dota.damage[lvl-1] +
+      (d.blink ? ' · <b>БЛИНКИ</b>' : '') + (d.stutter ? ' · <b>STUTTER-STEP</b>' : '') +
       (d.fog > 0 ? ' · туман войны' : '');
+  }
+  // кнопки уровня ульта с точными дотерскими числами
+  function markUlt(){
+    var box = $('ultBox');
+    var lvl = Save.data.set.ultLevel, agh = Save.data.set.aghanim;
+    for(var i=0;i<box.children.length;i++){
+      var b = box.children[i], L = parseInt(b.dataset.lvl, 10);
+      var p = ultParams(L, agh);
+      b.className = 'ult' + (L === lvl ? ' sel' : '');
+      b.innerHTML = '<span class="un">Ульта ' + L + (L === lvl ? ' ✓' : '') + '</span>' +
+                    '<span class="ud">радиус ' + p.units + ' ед. (' + p.px + ' px)<br>урон ' + p.dmg + '</span>';
+    }
+    var cur = ultParams(lvl, agh);
+    $('ultHint').innerHTML = 'В доте Sun Strike: задержка <b>1.7 с</b>, радиус <b>175/200/225/250</b> ед., ' +
+      'урон <b>200/250/300/350</b>, чистый урон по площади, строения неуязвимы. ' +
+      'Сейчас: радиус <b>' + cur.units + ' ед.</b> (' + cur.px + ' px, ' +
+      Math.round(cur.units / CONFIG.dota.heroRadiusUnits * 10)/10 + ' героя в поперечнике), урон <b>' + cur.dmg + '</b>.' +
+      (agh ? ' <b>Агани́м:</b> зона 425 ед.' : '') +
+      '<br>Крипы в линиях: ' + CONFIG.dota.creepHp.melee + ' HP (меле) и ' + CONFIG.dota.creepHp.ranged +
+      ' HP (рендж), у героев ' + CONFIG.dota.heroHp + ' HP. ' +
+      (Save.data.set.dotaHp
+        ? '<b>Строгий дотерский режим:</b> ульта бьёт ровно на ' + cur.dmg + ' — добивай раненых крипов и не жди мгновенных убийств героев.'
+        : '<b>Режим тренажёра:</b> прямое попадание убивает цель, но урон и зона показаны дотерские.');
   }
   function buildDurationSelect(){
     var sel = $('durSel');
@@ -2162,12 +3614,13 @@ var UI = (function(){
     $('menuStats').innerHTML =
       box('лучшая точность', fmtPct(d.bestAcc)) +
       box('точность за всё время', d.casts ? fmtPct(acc) : '—') +
+      box('точность по героям', d.casts ? fmtPct((d.heroHits || 0)/d.casts) : '—') +
       box('всего кастов', d.casts) +
       box('всего киллов', d.kills) +
       box('лучший стрик', d.bestStreak) +
       box('рекорд очков', d.bestScore) +
-      box('раундов', d.rounds) +
-      box('выстрелов в хитмапе', d.shots.length);
+      box('урона ультой всего', Math.round(d.damage || 0)) +
+      box('раундов', d.rounds);
     var need = Save.xpForLevel(d.level), pct = clamp(d.xp / need, 0, 1);
     $('lvlNum').textContent = d.level;
     $('lvlBar').style.width = (pct*100).toFixed(1) + '%';
@@ -2181,13 +3634,20 @@ var UI = (function(){
     var st = Game.stats();
     $('rTitle').textContent = 'Итоги раунда';
     $('rSub').innerHTML = 'Сложность <b style="color:' + Game.diff.color + '">' + Game.diff.name +
-      '</b> · ' + Game.dur + ' с · задержка урона ' + fmt2(Game.delay) + ' с · радиус ' +
-      Math.round(CONFIG.strike.radius * Game.diff.radiusMul) + ' px';
+      '</b> · ' + Game.dur + ' с · Sun Strike <b>' + (Game.ultLevel||1) + ' ур.</b>' +
+      (Game.aghanim ? ' + Агани́м' : '') + ' · радиус <b>' + Math.round(pxToUnits(Game.effectiveRadius())) +
+      ' ед.</b> (' + Math.round(Game.effectiveRadius()/S) + ' px) · урон ' + Game.strikeDamage() +
+      ' · задержка ' + fmt2(Game.delay) + ' с';
     $('rGrid').innerHTML =
       box('точность', (st.casts ? fmtPct(st.acc) : '—') + (res.newAcc ? ' <small>рекорд!</small>' : '')) +
-      box('киллы', st.kills) +
+      box('убийств ультой', st.kills) +
       box('касты', st.casts) +
-      box('попадания', st.hits) +
+      box('попадания', st.hits + (st.casts ? ' <small>по героям ' + st.heroHits + '</small>' : '')) +
+      box('точность по героям', st.casts ? fmtPct(st.heroAcc) : '—') +
+      box('убито героев', st.killsHeroes) +
+      box('добито крипов', st.killsCreeps) +
+      box('урон ультой', Math.round(st.damage)) +
+      box('крипов в линиях', st.battle ? (st.battle.radiantKills + ' / ' + st.battle.direKills) : '—') +
       box('лучший стрик', st.best) +
       box('средний промах', Game.missN ? Math.round(st.avgMiss) + ' <small>px</small>' : '—') +
       box('средняя ошибка', Game.allDistN ? Math.round(st.avgDist) + ' <small>px</small>' : '—') +
@@ -2219,10 +3679,12 @@ var UI = (function(){
     renderMenuStats();
     drawHeatmap($('menuMap'));
     markDifficulty(Save.data.set.diff);
+    markUlt();
   }
   function showPause(){ show('pause'); }
 
-  return { show:show, showHud:showHud, hideHud:hideHud, syncHud:syncHud, toast:toast,
+  return { show:show, showHud:showHud, hideHud:hideHud, syncHud:syncHud, toast:toast, castFx:castFx,
+           markUlt:markUlt,
            buildDifficultyButtons:buildDifficultyButtons, markDifficulty:markDifficulty,
            buildDurationSelect:buildDurationSelect, renderMenuStats:renderMenuStats,
            showResults:showResults, showMenu:showMenu, showPause:showPause, flashStreak:flashStreak };
@@ -2245,8 +3707,9 @@ function heatVerdictHTML(shots){
   var meanA = sa/n/S, meanP = sp/n/S;                       // переводим в дизайн-px
   var sd = Math.sqrt(Math.max(0, sa2/n - (sa/n)*(sa/n)))/S; // разброс по курсу
   var acc = hits/n;
-  var R = CONFIG.strike.radius;
-  var sec = Math.abs(meanA) / Math.max(30, DIFFICULTIES[Save.data.set.diff].speed);
+  var R = Game.effectiveRadius() / S;
+  var spdRef = CONFIG.dota.heroSpeed * (DIFFICULTIES[Save.data.set.diff].heroSpeedMul || 1);
+  var sec = Math.abs(meanA) / Math.max(30, spdRef);
   var out = 'Выстрелов в истории: <b>' + n + '</b>, из них попаданий <b>' + fmtPct(acc) + '</b>. ';
   out += 'Средний снос по курсу: <b>' + (meanA >= 0 ? '+' : '−') + Math.round(Math.abs(meanA)) + ' px</b> ';
   out += '(' + (meanA >= 0 ? 'перелёт' : 'отставание') + '), боковой: <b>' +
@@ -2310,7 +3773,7 @@ function drawHeatmap(cv){
     if(py > 0 && py < h){ c.beginPath(); c.moveTo(0, py); c.lineTo(w, py); c.stroke(); }
   }
   // зона попадания (радиус удара)
-  var Rr = CONFIG.strike.radius * S * ppu;
+  var Rr = Game.effectiveRadius() * ppu;
   c.beginPath(); c.arc(cx, cy, Rr, 0, TAU);
   c.fillStyle = 'rgba(127,195,90,0.07)'; c.fill();
   c.strokeStyle = 'rgba(99,215,255,0.5)'; c.lineWidth = 1.2; c.setLineDash([4,4]); c.stroke(); c.setLineDash([]);
@@ -2378,7 +3841,7 @@ function drawErrGraph(cv){
   c.fillRect(0,0,w,h);
 
   // масштаб по Y (в «дизайн-px» ошибки)
-  var maxErr = CONFIG.strike.radius * 1.6;
+  var maxErr = Game.effectiveRadius() / S * 1.6;
   for(var i=0;i<recs.length;i++) if(recs[i].dist >= 0) maxErr = Math.max(maxErr, recs[i].dist / S * 1.12);
   var dur = Math.max(1, Game.dur);
   function X(t){ return padL + clamp(t/dur, 0, 1) * plotW; }
@@ -2401,7 +3864,7 @@ function drawErrGraph(cv){
     c.fillText(Math.round(t) + 'с', x, padT + plotH + 4);
   }
   // линия радиуса поражения
-  var yr = Y(CONFIG.strike.radius * S / S);
+  var yr = Y(Game.effectiveRadius() / S);
   c.setLineDash([4,4]);
   c.beginPath(); c.moveTo(padL, yr); c.lineTo(w-padR, yr);
   c.strokeStyle = 'rgba(99,215,255,0.55)'; c.lineWidth = 1.2; c.stroke();
@@ -2451,23 +3914,34 @@ function drawErrGraph(cv){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  12. Режим «фона» в меню: цели просто ходят, чтобы картинка жила
+//  12. Фон в меню: живая линия — волны крипов бьются у вышек, герои гуляют
 // ══════════════════════════════════════════════════════════════════════════════
 function startAmbient(){
   Game.state = 'menu';
   Game.diff = DIFFICULTIES[Save.data.set.diff];
   Game.delay = Save.data.set.delay;
+  Game.ultLevel = Save.data.set.ultLevel;
+  Game.aghanim = Save.data.set.aghanim;
   Game.reset();
   Game.countdownT = 0;
-  for(var i=0;i<Game.diff.count;i++){
-    var u = Game.spawnOne(Game.spawnType(i));
-    u.dist = rand(u.lane.len*0.1, u.lane.len*0.9);
-    pathAtOut(u);
+  for(var i=0;i<Lanes.length;i++){
+    Game.spawnTower(TEAM.RADIANT, i);
+    Game.spawnTower(TEAM.DIRE, i);
   }
+  for(var h=0; h<Math.max(1, Game.diff.heroes); h++) Game.spawnHero(h % Lanes.length);
+  for(var L=0; L<Lanes.length; L++){ Game.spawnWave(L, TEAM.RADIANT); Game.spawnWave(L, TEAM.DIRE); }
+  Game.nextWave = 4;
+  FX.clear();
 }
 function ambientUpdate(dt){
-  for(var i=0;i<Game.units.length;i++) Game.units[i].update(dt, nowT);
-  if(Game.units.length < Game.diff.count && Math.random() < dt*0.8) Game.spawnOne();
+  Game.time += dt;
+  for(var i=Game.units.length-1;i>=0;i--){
+    var u = Game.units[i];
+    u.update(dt, Game.time);
+    if(u.dead) Game.units.splice(i,1);
+  }
+  Game.upkeep(dt);
+  var ds = FX.decals();
   FX.update(dt);
 }
 
@@ -2548,7 +4022,8 @@ function togglePause(){
 }
 function restartRound(){
   SFX.unlock();
-  Game.start(Prefs().diff, Prefs().dur, Prefs().delay);
+  var p = Prefs();
+  Game.start(p.diff, p.dur, p.delay, p.ultLevel, p.aghanim);
   UI.show('game');
 }
 function toMenu(){
@@ -2566,9 +4041,12 @@ function toggleMute(){
 }
 function pickDifficulty(id){
   if(!DIFFICULTIES[id]) return;
+  var d = DIFFICULTIES[id];
   Save.data.set.diff = id;
+  if(d.ultLevel) Save.data.set.ultLevel = d.ultLevel;   // сложность = цели + уровень ульта
   Save.save();
   UI.markDifficulty(id);
+  UI.markUlt();
   if(Game.state === 'playing' || Game.state === 'paused'){
     Game.diff = DIFFICULTIES[id];
     restartRound();
@@ -2581,6 +4059,29 @@ function pickDifficulty(id){
   }
 }
 function Prefs(){ return Save.data.set; }
+
+// Точные дотерские параметры Sun Strike по уровням — показываем в меню
+function ultParams(lvl, aghanim){
+  var D = CONFIG.dota;
+  var units = aghanim ? D.radiusScepterUnits : D.radiusUnits[lvl-1];
+  var dmg = D.damage[lvl-1] + (aghanim ? D.scepterDamageBonus : 0);
+  return { units:units, px:Math.round(unitsToPx(units)), dmg:dmg };
+}
+function setUltLevel(lvl){
+  Save.data.set.ultLevel = clamp(lvl, 1, 4);
+  Save.save();
+  UI.markUlt();
+  SFX.ui();
+  UI.toast('Sun Strike ' + lvl + ' ур. · радиус ' + ultParams(lvl, Save.data.set.aghanim).units + ' ед.', true);
+  if(Game.state === 'menu') startAmbient();
+}
+function setAghanim(on){
+  Save.data.set.aghanim = !!on;
+  Save.save();
+  UI.markUlt();
+  SFX.ui();
+  if(Game.state === 'menu') startAmbient();
+}
 
 // ── Кнопки меню/экранов ──
 UI.buildDifficultyButtons(pickDifficulty);
@@ -2611,6 +4112,35 @@ UI.buildDurationSelect();
       b.classList.add('warn');
       setTimeout(function(){ if(b.dataset.armed === '1'){ b.dataset.armed = '0'; b.textContent = 'Сбросить прогресс'; b.classList.remove('warn'); } }, 4000);
     }
+  });
+  // уровень ульта
+  var ub = $('ultBox');
+  ub.innerHTML = '';
+  for(var lv=1; lv<=4; lv++){
+    (function(L){
+      var b = document.createElement('button');
+      b.className = 'ult'; b.type = 'button'; b.dataset.lvl = L;
+      b.addEventListener('click', function(){ SFX.unlock(); setUltLevel(L); });
+      ub.appendChild(b);
+    })(lv);
+  }
+  $('cbAghanim').checked = Save.data.set.aghanim;
+  $('cbAghanim').addEventListener('change', function(){ setAghanim(this.checked); });
+  $('cbVoice').checked = Save.data.set.annVoice;
+  $('cbVoice').addEventListener('change', function(){
+    Save.data.set.annVoice = this.checked; Save.save(); SFX.ui();
+    if(this.checked) Ann.say('Аннонсер включён', 'ru-RU');
+  });
+  $('cbDotaHp').checked = !!Save.data.set.dotaHp;
+  $('cbDotaHp').addEventListener('change', function(){
+    Save.data.set.dotaHp = this.checked; Save.save(); SFX.ui();
+    UI.toast(this.checked ? 'Дотерские HP: добивай ультой раненых' : 'Режим «попадание = килл»', true);
+    UI.markUlt();
+    if(Game.state === 'menu') startAmbient();
+  });
+  $('cbStings').checked = Save.data.set.annStings;
+  $('cbStings').addEventListener('change', function(){
+    Save.data.set.annStings = this.checked; Save.save(); SFX.ui();
   });
   $('durSel').addEventListener('change', function(){
     Save.data.set.dur = parseInt(this.value, 10);
@@ -2668,6 +4198,7 @@ function loop(ts){
     fpsWin = 0; fpsFrames = 0;
   }
 
+  hudAnim.cast = Math.max(0, hudAnim.cast - dt * 2.2);   // затухание вспышки портрета
   // таймаут «пальца» на тач-экране
   if(Game.pointer.touch && nowT > Game.pointer.touchUntil) Game.pointer.inside = false;
 
@@ -2691,6 +4222,7 @@ if(window.visualViewport) window.visualViewport.addEventListener('resize', onRes
 
 // ── Загрузка ──
 Save.load();
+Ann.init();
 SFX.setEnabled(!Save.data.set.mute);
 $('bMute').textContent = Save.data.set.mute ? '🔇' : '🔊';
 (function initUi(){
@@ -2698,6 +4230,7 @@ $('bMute').textContent = Save.data.set.mute ? '🔇' : '🔊';
   $('delayVal').textContent = fmt2(Save.data.set.delay) + ' с';
   $('durSel').value = Save.data.set.dur;
   if(!Save.isOk()) $('saveWarn').textContent = 'localStorage недоступен — прогресс не сохраняется';
+  UI.markUlt();
 })();
 resize();
 startAmbient();
