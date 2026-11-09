@@ -1,0 +1,19 @@
+# Системные файлы
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Редакторы
+.vscode/
+.idea/
+*.swp
+*~
+
+# Временные файлы и логи
+*.tmp
+*.bak
+*.log
+
+# Сохранения игры и локальные замеры (не публикуем)
+*.hoi4
+benchmarks_local/
